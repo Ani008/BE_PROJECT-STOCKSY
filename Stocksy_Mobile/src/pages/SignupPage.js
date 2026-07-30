@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -7,12 +7,21 @@ import {
   Platform,
   ScrollView,
   Alert,
+  TouchableOpacity,
 } from "react-native";
+import Constants from "expo-constants";
+import Svg, { Path } from "react-native-svg";
 import Button from "../components/Button";
 import Input from "../components/Input";
+import PrivacyConsentModal from "../components/PrivacyConsentModal";
 import authService from "../../services/authService";
+import usePrivacyConsent from "../hooks/usePrivacyConsent";
 
 import { SafeAreaView } from "react-native-safe-area-context";
+
+import { API_BASE_URL, WEB_CLIENT_ID } from "../config/env";
+// import { GoogleSignin } from "@react-native-google-signin/google-signin";
+import * as SecureStore from "expo-secure-store";
 
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
@@ -22,6 +31,22 @@ const SignupPage = ({ navigation }) => {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
+
+  const { hasAccepted, loading: consentLoading, markAccepted } = usePrivacyConsent();
+  const [consentModalVisible, setConsentModalVisible] = useState(false);
+  // Remembers which signup method was tapped so, once the user accepts the
+  // policy in the modal, we resume that exact action automatically.
+  const [pendingAction, setPendingAction] = useState(null); // 'email' | 'google'
+
+  const isExpoGo = Constants.executionEnvironment === "storeClient";
+
+  useEffect(() => {
+    if (!isExpoGo) {
+      GoogleSignin.configure({
+        webClientId: WEB_CLIENT_ID,
+      });
+    }
+  }, []);
 
   const validate = () => {
     const newErrors = {};
@@ -34,8 +59,28 @@ const SignupPage = ({ navigation }) => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSignup = async () => {
-    if (!validate()) return;
+  const GoogleIcon = () => (
+    <Svg width={20} height={20} viewBox="0 0 48 48">
+      <Path
+        fill={Colors.warning}
+        d="M43.6 20.5H42V20H24v8h11.3C33.6 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12S17.4 12 24 12c3 0 5.7 1.1 7.8 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"
+      />
+      <Path
+        fill={Colors.danger}
+        d="M6.3 14.7l6.6 4.8C14.7 15.1 18.9 12 24 12c3 0 5.7 1.1 7.8 3l5.7-5.7C34 6.1 29.3 4 24 4c-7.7 0-14.4 4.3-17.7 10.7z"
+      />
+      <Path
+        fill="#4CAF50"
+        d="M24 44c5.2 0 10-2 13.6-5.3l-6.3-5.2C29.3 35.1 26.8 36 24 36c-5.2 0-9.6-3.3-11.1-8l-6.6 5.1C9.6 39.6 16.2 44 24 44z"
+      />
+      <Path
+        fill="#1976D2"
+        d="M43.6 20.5H42V20H24v8h11.3c-1.1 3.1-3.3 5.5-6.3 6.8l6.3 5.2C39.4 36.3 44 30.8 44 24c0-1.3-.1-2.4-.4-3.5z"
+      />
+    </Svg>
+  );
+
+  const doEmailSignup = async () => {
     setLoading(true);
     try {
       await authService.signup({
@@ -49,6 +94,78 @@ const SignupPage = ({ navigation }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const doGoogleSignup = async () => {
+    try {
+      await GoogleSignin.hasPlayServices();
+
+      const userInfo = await GoogleSignin.signIn();
+
+      const tokens = await GoogleSignin.getTokens();
+
+      const idToken = tokens.idToken;
+
+      const res = await fetch(`${API_BASE_URL}/auth/google`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          idToken,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        Alert.alert("Google Signup Failed", data.message);
+        return;
+      }
+
+      await SecureStore.setItemAsync("token", data.token);
+      await SecureStore.setItemAsync("user", JSON.stringify(data));
+
+      navigation.replace("MainTabs");
+    } catch (err) {
+      console.log(err);
+      Alert.alert("Google Signup Failed", err.message);
+    }
+  };
+
+  // Both signup paths are gated behind privacy-policy acceptance. First
+  // time through, this opens the modal and stashes which action to resume;
+  // after that it's a no-op passthrough straight into the real signup.
+  const requireConsentThen = (action, run) => {
+    if (consentLoading) return;
+    if (hasAccepted) {
+      run();
+      return;
+    }
+    setPendingAction(action);
+    setConsentModalVisible(true);
+  };
+
+  const handleSignup = () => {
+    if (!validate()) return;
+    requireConsentThen("email", doEmailSignup);
+  };
+
+  const handleGoogleSignup = () => {
+    requireConsentThen("google", doGoogleSignup);
+  };
+
+  const handleConsentAccept = async () => {
+    await markAccepted();
+    setConsentModalVisible(false);
+    if (pendingAction === "email") doEmailSignup();
+    if (pendingAction === "google") doGoogleSignup();
+    setPendingAction(null);
+  };
+
+  const handleConsentCancel = () => {
+    setConsentModalVisible(false);
+    setPendingAction(null);
   };
 
   return (
@@ -101,6 +218,23 @@ const SignupPage = ({ navigation }) => {
               loading={loading}
               style={styles.btn}
             />
+
+            <View style={styles.dividerContainer}>
+              <View style={styles.divider} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.divider} />
+            </View>
+
+            {!isExpoGo && (
+              <TouchableOpacity
+                style={styles.googleButton}
+                onPress={handleGoogleSignup}
+                activeOpacity={0.8}
+              >
+                <GoogleIcon />
+                <Text style={styles.googleButtonText}>Sign up with Google</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Footer */}
@@ -115,6 +249,12 @@ const SignupPage = ({ navigation }) => {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <PrivacyConsentModal
+        visible={consentModalVisible}
+        onAccept={handleConsentAccept}
+        onCancel={handleConsentCancel}
+      />
     </SafeAreaView>
   );
 };
@@ -143,6 +283,40 @@ const styles = StyleSheet.create({
   footer: { flexDirection: "row", justifyContent: "center", marginTop: moderateScale(16) },
   footerText: { fontSize: fontScale(14), color: Colors.textSecondary },
   link: { fontSize: fontScale(14), color: Colors.primaryDark, fontWeight: "600" },
+
+  dividerContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: moderateScale(20),
+    marginBottom: moderateScale(16),
+  },
+  divider: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.border,
+  },
+  dividerText: {
+    marginHorizontal: moderateScale(12),
+    color: Colors.textMuted,
+    fontSize: fontScale(Typography.caption),
+    fontWeight: "500",
+  },
+  googleButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    paddingVertical: moderateScale(14),
+  },
+  googleButtonText: {
+    marginLeft: moderateScale(12),
+    fontSize: fontScale(Typography.body),
+    fontWeight: "600",
+    color: Colors.text,
+  },
 });
 
 export default SignupPage;

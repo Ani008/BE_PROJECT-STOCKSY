@@ -75,9 +75,23 @@ export const logout = async () => {
   return response.data;
 };
 
+// password is only required for local (email/password) accounts — the
+// backend skips that check for Google accounts. Safe to always pass
+// whatever the modal collected; the backend ignores it if not needed.
+export const deleteAccount = async (password) => {
+  const response = await api.delete("/auth/account", {
+    data: password ? { password } : {},
+  });
+
+  await clearToken();
+  await AsyncStorage.removeItem("user");
+
+  return response.data;
+};
+
 // ─── Default export (object) so both import styles work ──────────────────────
 // LoginPage.js  → import authService from '...'  → authService.login(...)
 // App.js        → import { getStoredToken } from '...'  → getStoredToken()
 
-const authService = { signup, login, logout, getStoredToken };
+const authService = { signup, login, logout, getStoredToken, deleteAccount };
 export default authService;

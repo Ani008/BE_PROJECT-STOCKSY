@@ -15,6 +15,9 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
+import authService from "../../services/authService";
+import { showToast } from "../../services/uiBridge";
+import DeleteAccountModal from "../components/DeleteAccountModal";
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
 const APP_VERSION = "1.0.0";
@@ -32,6 +35,8 @@ const ProfilePage = ({ navigation }) => {
   const [user, setUser] = useState(null);
   const [accountExpanded, setAccountExpanded] = useState(false);
   const [aboutExpanded, setAboutExpanded] = useState(false);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener("focus", loadUser);
@@ -78,6 +83,22 @@ const ProfilePage = ({ navigation }) => {
     Linking.openURL(`mailto:${SUPPORT_EMAIL}`).catch(() => {
       Alert.alert("Couldn't open email", `Reach us anytime at ${SUPPORT_EMAIL}`);
     });
+  };
+
+  const handleDeleteAccount = async (password) => {
+    setDeletingAccount(true);
+    try {
+      await authService.deleteAccount(password);
+      setDeleteModalVisible(false);
+      showToast("Your account has been permanently deleted.", "success");
+      navigation.replace("Login");
+    } catch (err) {
+      // Error toast is already shown globally by the api.js interceptor
+      // (e.g. "Incorrect password" or the validation message) — just
+      // keep the modal open so they can retry.
+    } finally {
+      setDeletingAccount(false);
+    }
   };
 
   const displayName = user?.fullName || user?.username || "Trader";
@@ -276,8 +297,26 @@ const ProfilePage = ({ navigation }) => {
             <MaterialCommunityIcons name="logout" size={20} color={Colors.danger} />
             <Text style={styles.logoutText}>Logout</Text>
           </TouchableOpacity>
+
+          {/* Delete Account — separated from Logout so it's not mistaken
+              for the same, much more common, action. */}
+          <TouchableOpacity
+            style={styles.deleteAccountCard}
+            onPress={() => setDeleteModalVisible(true)}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons name="delete-outline" size={18} color={Colors.textMuted} />
+            <Text style={styles.deleteAccountText}>Delete Account</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <DeleteAccountModal
+        visible={deleteModalVisible}
+        onConfirm={handleDeleteAccount}
+        onCancel={() => setDeleteModalVisible(false)}
+        loading={deletingAccount}
+      />
     </SafeAreaView>
   );
 };
@@ -491,6 +530,21 @@ const styles = StyleSheet.create({
     color: Colors.danger,
     fontWeight: "700",
     fontSize: fontScale(Typography.bodyLarge),
+  },
+
+  // ── Delete Account ────────────────────────────────────────────────────
+  deleteAccountCard: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: moderateScale(8),
+    paddingVertical: moderateScale(14),
+    marginTop: moderateScale(4),
+  },
+  deleteAccountText: {
+    color: Colors.textMuted,
+    fontWeight: "600",
+    fontSize: fontScale(Typography.small),
   },
 });
 
