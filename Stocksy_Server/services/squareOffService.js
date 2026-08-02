@@ -31,10 +31,14 @@ const TIMEZONE = "Asia/Kolkata";
 async function runSquareOff() {
   logger.info("[SQUARE-OFF] Starting MIS auto square-off run");
 
+  // quantity > 0 is an open long (needs a SELL to close). quantity < 0 is
+  // an open short (needs a BUY to cover) — short positions are just as
+  // much "intraday" as longs and MUST be forced flat before close too,
+  // otherwise a user could carry short exposure overnight for free.
   const { rows: positions } = await pool.query(
     `SELECT id, user_id, wallet_id, instrument_key, symbol, name, quantity
      FROM positions
-     WHERE product_type = 'MIS' AND quantity > 0`
+     WHERE product_type = 'MIS' AND quantity != 0`
   );
 
   if (positions.length === 0) {
@@ -53,13 +57,16 @@ async function runSquareOff() {
   // moment every single trading day.
   for (const pos of positions) {
     try {
+      const qty = parseFloat(pos.quantity);
+      const isShort = qty < 0;
+
       await placeOrder(pos.user_id, pos.wallet_id, {
         instrument_key: pos.instrument_key,
         symbol: pos.symbol,
         name: pos.name,
         order_type: "MARKET",
-        side: "SELL",
-        quantity: parseFloat(pos.quantity),
+        side: isShort ? "BUY" : "SELL",
+        quantity: Math.abs(qty),
         product_type: "MIS",
         metadata: { reason: "AUTO_SQUARE_OFF" },
       });

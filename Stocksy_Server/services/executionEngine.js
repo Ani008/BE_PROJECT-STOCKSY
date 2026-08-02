@@ -431,7 +431,9 @@ async function executeOrder(jobData) {
     // 7. Trade Record
     // ─────────────────────────────────────────────────────────
 
-    await client.query(
+    const {
+      rows: [insertedTrade],
+    } = await client.query(
       `
       INSERT INTO trades
       (
@@ -455,6 +457,7 @@ async function executeOrder(jobData) {
         $7,$8,$9,$10,$11,
         $12,NOW()
       )
+      RETURNING id
       `,
       [
         orderId,
@@ -469,6 +472,53 @@ async function executeOrder(jobData) {
         brokerage,
         tradeValue,
         side === "SELL" ? realisedPnl : null,
+      ],
+    );
+
+    // ─────────────────────────────────────────────────────────
+    // 7b. Platform Revenue Ledger
+    // ─────────────────────────────────────────────────────────
+    // The brokerage line above is the ONLY thing Stocksy actually earns
+    // on this trade — STT, exchange charges, SEBI charges, stamp duty
+    // and GST (shown to the user on the charges breakdown sheet) are all
+    // statutory pass-throughs to the government/exchange/regulator, not
+    // platform revenue, so they are deliberately NOT recorded here.
+    // Written in the same transaction as the trade so revenue and
+    // trades can never drift out of sync.
+
+    await client.query(
+      `
+      INSERT INTO platform_revenue
+      (
+        trade_id,
+        order_id,
+        user_id,
+        wallet_id,
+        instrument_key,
+        symbol,
+        side,
+        product_type,
+        trade_value,
+        brokerage_amount,
+        earned_at
+      )
+      VALUES
+      (
+        $1,$2,$3,$4,$5,$6,
+        $7,$8,$9,$10,NOW()
+      )
+      `,
+      [
+        insertedTrade.id,
+        orderId,
+        userId,
+        walletId,
+        instrumentKey,
+        symbol,
+        side,
+        productType,
+        tradeValue,
+        brokerage,
       ],
     );
 

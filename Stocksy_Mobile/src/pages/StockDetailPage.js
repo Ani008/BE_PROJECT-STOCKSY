@@ -18,6 +18,7 @@ import useMarketData from "../hooks/useMarketData";
 import useHistoricalData from "../hooks/useHistoricalData";
 import ChartView from "../components/ChartView";
 import useFundamentals from "../hooks/useFundamentals";
+import SetAlertModal from "../components/SetAlertModal";
 
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
@@ -49,6 +50,7 @@ const StockDetailPage = ({ navigation, route }) => {
   } = route.params;
 
   const [activeRange, setActiveRange] = useState("1M");
+  const [alertModalVisible, setAlertModalVisible] = useState(false);
 
   const { prices, isConnected } = useMarketData();
   const {
@@ -153,6 +155,13 @@ const StockDetailPage = ({ navigation, route }) => {
         >
           {symbol}
         </Text>
+
+        <TouchableOpacity
+          onPress={() => setAlertModalVisible(true)}
+          style={styles.alertBtn}
+        >
+          <Ionicons name="notifications-outline" size={moderateScale(20)} color={Colors.text} />
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -623,6 +632,15 @@ const StockDetailPage = ({ navigation, route }) => {
           <Text style={styles.buyText}>Buy</Text>
         </TouchableOpacity>
       </View>
+
+      <SetAlertModal
+        visible={alertModalVisible}
+        onClose={() => setAlertModalVisible(false)}
+        instrumentKey={instrumentKey}
+        symbol={symbol}
+        name={name}
+        ltp={ltp}
+      />
     </SafeAreaView>
   );
 };
@@ -666,6 +684,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginRight: moderateScale(12),
+    flexShrink: 0,
+  },
+  alertBtn: {
+    width: moderateScale(36),
+    height: moderateScale(36),
+    borderRadius: moderateScale(10),
+    backgroundColor: Colors.divider,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: moderateScale(12),
     flexShrink: 0,
   },
   headerTitle: {

@@ -58,7 +58,7 @@ const deleteAccount = async (userId) => {
       SELECT COUNT(*)::int AS open_positions
       FROM positions
       WHERE user_id = $1
-      AND quantity > 0
+      AND quantity != 0
       `,
       [userId],
     );

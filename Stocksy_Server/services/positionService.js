@@ -65,7 +65,7 @@ async function getPositions(userId, walletId = null) {
       ON w.id = p.wallet_id
     WHERE p.user_id = $1
       AND ($2::uuid IS NULL OR p.wallet_id = $2)
-      AND p.quantity > 0
+      AND p.quantity != 0
     ORDER BY p.updated_at DESC
     `,
     [userId, walletId]
@@ -91,11 +91,16 @@ async function getPositions(userId, walletId = null) {
       `stock:${position.instrument_key}`
     ];
 
-    const investedValue = avgCost * qty;
+    // quantity is negative for a short — use the magnitude for
+    // invested/current value so they read as sensible positive numbers,
+    // same as any broker's positions screen. unrealised P&L keeps qty's
+    // sign as-is: (ltp - avgCost) * qty naturally flips correctly for a
+    // short (price falling below entry is a profit when qty is negative).
+    const investedValue = avgCost * Math.abs(qty);
 
     const currentValue =
       ltp !== null
-        ? ltp * qty
+        ? ltp * Math.abs(qty)
         : investedValue;
 
     const unrealisedPnl =
@@ -105,7 +110,7 @@ async function getPositions(userId, walletId = null) {
 
     const unrealisedPnlPct =
       ltp !== null && avgCost > 0
-        ? ((ltp - avgCost) / avgCost) * 100
+        ? ((ltp - avgCost) / avgCost) * 100 * (qty < 0 ? -1 : 1)
         : 0;
 
     return {
@@ -113,6 +118,7 @@ async function getPositions(userId, walletId = null) {
 
       quantity: qty,
       avg_cost: avgCost,
+      position_side: qty < 0 ? 'SHORT' : 'LONG',
       realised_pnl: parseFloat(
         realisedPnl.toFixed(2)
       ),

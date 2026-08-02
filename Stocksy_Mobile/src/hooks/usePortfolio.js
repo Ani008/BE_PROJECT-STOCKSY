@@ -193,29 +193,37 @@ export function usePortfolio(prices = {}) {
   // ── Enrich positions with live WS prices every tick ──────────────────────
   const positions = useMemo(() => {
     return rawPositions
-      .filter((p) => parseFloat(p.quantity) > 0)
+      .filter((p) => parseFloat(p.quantity) !== 0)
       .map((p) => {
         const qty = parseFloat(p.quantity);
+        const isShort = qty < 0;
         const avgCost = parseFloat(p.avg_cost);
-        const invested = qty * avgCost;
+        // "invested" is a display magnitude (shares × avg price) — use
+        // the absolute value so a short reads as a normal positive
+        // rupee figure, same as any broker's positions screen.
+        const invested = Math.abs(qty) * avgCost;
         const ws = prices[p.instrument_key];
         const ltp = ws?.ltp ? parseFloat(ws.ltp) : null;
         const prevClose = ws?.cp ? parseFloat(ws.cp) : null;
         const sector = ws?.sector ?? getSector(p.instrument_key);
         const symbol = ws?.symbol ?? p.symbol;
         const name = ws?.name ?? p.name ?? symbol;
-        const currentValue = ltp ? ltp * qty : invested;
+        const currentValue = ltp ? ltp * Math.abs(qty) : invested;
+        // qty carries the sign, so this naturally flips correctly for a
+        // short: price falling below avgCost with qty < 0 → positive P&L.
         const unrealisedPnl = ltp ? (ltp - avgCost) * qty : 0;
         const unrealisedPct =
           invested > 0 ? (unrealisedPnl / invested) * 100 : 0;
         const todayPnl = ltp && prevClose ? (ltp - prevClose) * qty : 0;
         const todayPct =
           prevClose && prevClose > 0
-            ? ((ltp - prevClose) / prevClose) * 100
+            ? ((ltp - prevClose) / prevClose) * 100 * (isShort ? -1 : 1)
             : 0;
         return {
           ...p,
           qty,
+          isShort,
+          positionSide: isShort ? "SHORT" : "LONG",
           avgCost,
           invested,
           ltp,

@@ -186,7 +186,12 @@ export default function MarketPage({ navigation }) {
   const { prices, isConnected } = useMarketData();
 
   const goToStock = (item) => {
-    navigation.navigate('StockDetail', { instrumentKey: item.key });
+    navigation.navigate('StockDetail', {
+      instrumentKey: item.key,
+      symbol: item.symbol,
+      name: item.name,
+      sector: item.sector,
+    });
   };
 
   // ── Flatten the live WS feed into a sortable list, recomputed on

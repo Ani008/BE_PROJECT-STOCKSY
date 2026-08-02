@@ -6,6 +6,8 @@ const { executeOrder } = require("../services/executionEngine");
 
 const { scheduleSquareOff } = require("../services/squareOffService");
 
+const { startRms } = require("../services/rmsService");
+
 const logger = require("../utils/logger");
 
 // ─────────────────────────────────────────────────────────────
@@ -124,6 +126,11 @@ function startOrderWorker() {
   // MIS positions get force-closed here too — same process, since
   // this is where all order execution already lives.
   scheduleSquareOff();
+
+  // Continuous margin monitoring — force-closes a losing MIS position
+  // the moment it eats too far into its own margin, instead of waiting
+  // for the 3:20pm square-off cron. See services/rmsService.js.
+  startRms();
 
   return queue;
 }

@@ -462,7 +462,14 @@ export default function PortfolioPage({ navigation }) {
               <HoldingRow
                 key={`${pos.instrument_key}:${pos.product_type}`}
                 position={pos}
-                onPress={() => {}}
+                onPress={() =>
+                  navigation.navigate('StockDetail', {
+                    instrumentKey: pos.instrument_key,
+                    symbol: pos.symbol,
+                    name: pos.name,
+                    sector: pos.sector,
+                  })
+                }
               />
             ))
           )}

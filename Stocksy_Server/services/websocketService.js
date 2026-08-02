@@ -24,6 +24,8 @@
 // ══════════════════════════════════════════════════════════════════════════════
 
 const WebSocket = require("ws");
+const jwt = require("jsonwebtoken");
+const { URL } = require("url");
 const connectedClients = new Map();
 const INSTRUMENTS = require("../config/instruments");
 
@@ -105,8 +107,31 @@ function initWebSocket(server) {
     const wss = new WebSocket.Server({ server });
     console.log('WebSocket server ready');
 
-    wss.on('connection', (ws) => {
+    wss.on('connection', (ws, req) => {
         console.log('React Native client connected');
+
+        // ── Identify the connection, if possible ──────────────────────────
+        // The live-price feed itself is intentionally public (no auth
+        // required just to watch prices) — but WITHOUT registering the
+        // socket by userId here, notifyClient() has nothing to send to,
+        // which silently breaks ORDER_FILLED / ORDER_REJECTED / RMS
+        // square-off notifications. The frontend appends its JWT as
+        // ?token=... on the WS URL (see useMarketData.js); if it's
+        // missing or invalid we still serve the price feed, we just
+        // can't push per-user notifications to this connection.
+        let userId = null;
+        try {
+            const { searchParams } = new URL(req.url, 'http://localhost');
+            const token = searchParams.get('token');
+            if (token) {
+                const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                userId = String(decoded.id);
+                connectedClients.set(userId, ws);
+                console.log(`[WS] Registered client for user ${userId}`);
+            }
+        } catch (err) {
+            console.log('[WS] Token missing/invalid — serving price feed only:', err.message);
+        }
 
         const interval = setInterval(async () => {
             try {
@@ -167,11 +192,17 @@ function initWebSocket(server) {
         ws.on('close', () => {
             console.log('Client disconnected');
             clearInterval(interval);
+            if (userId && connectedClients.get(userId) === ws) {
+                connectedClients.delete(userId);
+            }
         });
 
         ws.on('error', (err) => {
             console.error('WebSocket error:', err);
             clearInterval(interval);
+            if (userId && connectedClients.get(userId) === ws) {
+                connectedClients.delete(userId);
+            }
         });
     });
 

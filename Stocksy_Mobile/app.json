@@ -13,8 +13,8 @@
     "android": {
       "package": "com.stocksy.mobile",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/StocksyLogoBlue.jpeg",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/AndroidTransparentLogo.png",
+        "backgroundColor": "#2563EB"
       }
     },
     "web": {

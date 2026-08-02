@@ -14,9 +14,10 @@ import {
   StatusBar,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import CreateWalletModal from "../components/CreateWalletModal";
 import MarketClosedModal from "../components/MarketClosedModal";
+import ChargesBreakdownModal from "../components/ChargesBreakDownModel";
 import { walletService } from "../../services/walletService";
 import { fetchWallets, createWallet } from "../../services/walletService";
 import { placeOrder } from "../../services/orderService";
@@ -46,6 +47,11 @@ export default function BuyOrderScreen({ navigation, route }) {
     orderType: initialOrderType = "BUY",
   } = route.params || {};
 
+  // Height of the Android gesture/button nav bar (0 on iOS — handled by the
+  // fixed 30px baked into ctaContainer's paddingBottom instead) so the fixed
+  // Buy/Sell CTA footer never sits underneath the system nav bar.
+  const insets = useSafeAreaInsets();
+
   // ─── Order state ────────────────────────────────────────────────────────────
   const [orderType, setOrderType] = useState(initialOrderType); // BUY | SELL
   const [tradeType, setTradeType] = useState("Intraday"); // Intraday | Delivery
@@ -67,6 +73,9 @@ export default function BuyOrderScreen({ navigation, route }) {
   // doesn't flash a false "closed" state while the request is in flight.
   const [marketStatus, setMarketStatus] = useState({ isOpen: true, reason: null, nextOpen: null });
   const [marketModalVisible, setMarketModalVisible] = useState(false);
+
+  // ─── Charges breakdown sheet ─────────────────────────────────────────────────
+  const [chargesModalVisible, setChargesModalVisible] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -461,6 +470,15 @@ export default function BuyOrderScreen({ navigation, route }) {
                   )}
                 </Text>
               </View>
+
+              <TouchableOpacity
+                onPress={() => setChargesModalVisible(true)}
+                activeOpacity={0.6}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                style={styles.chargesLinkRow}
+              >
+                <Text style={styles.chargesLinkTxt}>View charges breakdown</Text>
+              </TouchableOpacity>
           </View>
 
           {/* ── Order mode (Market / Limit) ───────────────────────────────── */}
@@ -630,11 +648,11 @@ export default function BuyOrderScreen({ navigation, route }) {
           </View>
 
           {/* Bottom spacer so button doesn't overlap */}
-          <View style={{ height: 100 }} />
+          <View style={{ height: 100 + insets.bottom }} />
         </ScrollView>
 
         {/* ── Place order CTA ────────────────────────────────────────────────── */}
-        <View style={styles.ctaContainer}>
+        <View style={[styles.ctaContainer, { paddingBottom: styles.ctaContainer.paddingBottom + insets.bottom }]}>
           <TouchableOpacity
             style={[
               styles.ctaBtn,
@@ -695,6 +713,15 @@ export default function BuyOrderScreen({ navigation, route }) {
         onClose={() => setMarketModalVisible(false)}
         reason={marketStatus.reason}
         nextOpen={marketStatus.nextOpen}
+      />
+
+      {/* ── Charges breakdown bottom sheet ──────────────────────────────────── */}
+      <ChargesBreakdownModal
+        visible={chargesModalVisible}
+        onClose={() => setChargesModalVisible(false)}
+        orderValue={orderTotal}
+        side={orderType}
+        productType={productType}
       />
     </SafeAreaView>
   );
@@ -886,6 +913,16 @@ const styles = StyleSheet.create({
   },
   summaryKey: { fontSize: fontScale(Typography.caption), color: "#777" },
   summaryVal: { fontSize: fontScale(Typography.caption), color: Colors.text, fontWeight: "600" },
+  chargesLinkRow: {
+    marginTop: moderateScale(10),
+    alignSelf: "flex-start",
+  },
+  chargesLinkTxt: {
+    fontSize: fontScale(Typography.small),
+    fontWeight: "600",
+    color: Colors.primary,
+    textDecorationLine: "underline",
+  },
   leverageBadge: {
     backgroundColor: Colors.primaryLight,
     paddingHorizontal: moderateScale(10),

@@ -136,7 +136,7 @@ const ProfilePage = ({ navigation }) => {
               on the OrderHistory screen itself (same pattern as the
               Dashboard's Total Assets card). */}
           <TouchableOpacity
-            style={styles.card}
+            style={[styles.card, styles.cardHeaderRow]}
             activeOpacity={0.7}
             onPress={() => navigation.navigate("OrderHistory")}
           >
@@ -209,7 +209,7 @@ const ProfilePage = ({ navigation }) => {
           {/* Wallet & Funds — reuses the existing WalletScreen rather than
               duplicating balance/withdraw logic here. */}
           <TouchableOpacity
-            style={styles.card}
+            style={[styles.card, styles.cardHeaderRow]}
             activeOpacity={0.7}
             onPress={() => navigation.navigate("Wallet")}
           >
@@ -225,7 +225,7 @@ const ProfilePage = ({ navigation }) => {
             <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
           </TouchableOpacity>
 
-          {/* Refer & Invite */}
+          {/* {Refer & Invite}
           <View style={[styles.card, styles.referCard]}>
             <View style={styles.referIconRing}>
               <Ionicons name="heart" size={22} color={Colors.gain} />
@@ -244,10 +244,10 @@ const ProfilePage = ({ navigation }) => {
               <Ionicons name="paper-plane-outline" size={16} color={Colors.white} />
               <Text style={styles.referBtnText}>Invite a friend</Text>
             </TouchableOpacity>
-          </View>
+          </View> */}
 
           {/* Customer support */}
-          <TouchableOpacity style={styles.card} activeOpacity={0.7} onPress={handleSupport}>
+          <TouchableOpacity style={[styles.card, styles.cardHeaderRow]} activeOpacity={0.7} onPress={handleSupport}>
             <View style={styles.cardLeft}>
               <View style={[styles.iconCircle, { backgroundColor: Colors.primaryLight }]}>
                 <Ionicons name="headset-outline" size={20} color={Colors.primaryDark} />
@@ -261,7 +261,7 @@ const ProfilePage = ({ navigation }) => {
 
           {/* About */}
           <TouchableOpacity
-            style={styles.card}
+            style={[styles.card, styles.cardHeaderRow]}
             activeOpacity={0.7}
             onPress={() => setAboutExpanded((v) => !v)}
           >
@@ -279,16 +279,63 @@ const ProfilePage = ({ navigation }) => {
           </TouchableOpacity>
           {aboutExpanded && (
             <View style={styles.aboutContent}>
-              <Text style={styles.aboutText}>Stocksy v{APP_VERSION}</Text>
-              <Text style={styles.aboutText}>Real-time Paper Trading Platform</Text>
-              <Text style={styles.aboutText}>• OMS Engine</Text>
-              <Text style={styles.aboutText}>• Live Market Data</Text>
-              <Text style={styles.aboutText}>• Portfolio Tracking</Text>
-              <Text style={styles.aboutText}>• Redis Streaming</Text>
-              <Text style={styles.aboutText}>• PostgreSQL Storage</Text>
-              <Text style={[styles.aboutText, { marginTop: moderateScale(10) }]}>
-                Developed by Aniket
+              <View style={styles.aboutTitleRow}>
+                <Text style={styles.aboutAppName}>Stocksy</Text>
+                <View style={styles.aboutVersionBadge}>
+                  <Text style={styles.aboutVersionText}>v{APP_VERSION}</Text>
+                </View>
+              </View>
+              <Text style={styles.aboutTagline}>
+                Paper trading, built on real brokerage infrastructure
               </Text>
+
+              <Text style={styles.aboutBody}>
+                Stocksy simulates a full equity brokerage end to end live market
+                data, order matching, wallet ledgering, and portfolio tracking
+                so anyone can practise trading with zero financial risk. Every
+                trade runs through the same kind of engine a licensed broker
+                would use.
+              </Text>
+
+              <Text style={styles.aboutSectionLabel}>UNDER THE HOOD</Text>
+              <View style={styles.aboutTagRow}>
+                {[
+                  "Order Management System",
+                  "Live Market Data",
+                  "Portfolio Analytics",
+                  "Wallet & Ledger Engine",
+                  "PostgreSQL",
+                  "Redis Streaming",
+                ].map((tag) => (
+                  <View key={tag} style={styles.aboutTag}>
+                    <Text style={styles.aboutTagText}>{tag}</Text>
+                  </View>
+                ))}
+              </View>
+
+              <Text style={styles.aboutSectionLabel}>WHERE THIS IS HEADED</Text>
+              <Text style={styles.aboutBody}>
+                Stocksy is built as the foundation for a real, licensed brokerage
+                or a white-label trading-infrastructure product the OMS,
+                risk engine, and ledgering here are architected to extend
+                beyond simulation.
+              </Text>
+
+              <View style={styles.aboutDivider} />
+
+              <Text style={styles.aboutFounderText}>Built by Aniket</Text>
+              <TouchableOpacity
+                onPress={() =>
+                  Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=Stocksy — let's talk`).catch(
+                    () => Alert.alert("Couldn't open email", `Reach out at ${SUPPORT_EMAIL}`),
+                  )
+                }
+                activeOpacity={0.7}
+              >
+                <Text style={styles.aboutContactLink}>
+                  Interested in investing or partnering? Get in touch →
+                </Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -513,6 +560,82 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginBottom: moderateScale(6),
     lineHeight: 22,
+  },
+  aboutTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: moderateScale(8),
+  },
+  aboutAppName: {
+    fontSize: fontScale(Typography.h4),
+    fontWeight: "800",
+    color: Colors.text,
+  },
+  aboutVersionBadge: {
+    backgroundColor: Colors.primaryLight,
+    borderRadius: 999,
+    paddingHorizontal: moderateScale(8),
+    paddingVertical: moderateScale(2),
+  },
+  aboutVersionText: {
+    fontSize: fontScale(Typography.tiny),
+    fontWeight: "700",
+    color: Colors.primaryDark,
+  },
+  aboutTagline: {
+    fontSize: fontScale(Typography.small),
+    color: Colors.textSecondary,
+    fontStyle: "italic",
+    marginTop: moderateScale(4),
+    marginBottom: moderateScale(14),
+  },
+  aboutBody: {
+    fontSize: fontScale(Typography.caption),
+    color: Colors.textSecondary,
+    lineHeight: 21,
+    marginBottom: moderateScale(14),
+  },
+  aboutSectionLabel: {
+    fontSize: fontScale(Typography.tiny),
+    fontWeight: "700",
+    color: Colors.textMuted,
+    letterSpacing: 0.6,
+    marginBottom: moderateScale(8),
+  },
+  aboutTagRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: moderateScale(8),
+    marginBottom: moderateScale(16),
+  },
+  aboutTag: {
+    backgroundColor: Colors.background,
+    borderRadius: 8,
+    paddingHorizontal: moderateScale(10),
+    paddingVertical: moderateScale(6),
+    borderWidth: 1,
+    borderColor: Colors.divider,
+  },
+  aboutTagText: {
+    fontSize: fontScale(Typography.tiny),
+    fontWeight: "600",
+    color: Colors.text,
+  },
+  aboutDivider: {
+    height: 1,
+    backgroundColor: Colors.divider,
+    marginVertical: moderateScale(14),
+  },
+  aboutFounderText: {
+    fontSize: fontScale(Typography.caption),
+    fontWeight: "700",
+    color: Colors.text,
+    marginBottom: moderateScale(4),
+  },
+  aboutContactLink: {
+    fontSize: fontScale(Typography.small),
+    fontWeight: "600",
+    color: Colors.primary,
   },
 
   // ── Logout ────────────────────────────────────────────────────────────

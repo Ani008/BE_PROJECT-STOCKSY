@@ -192,11 +192,6 @@ async function placeOrder(userId, walletId, payload) {
   // CNC = 1x always. MIS = 5x for Nifty 50, 2.5x for everything else.
   const leverage = getLeverage(symbol, product_type);
 
-  const marginRequired =
-    side === 'BUY'
-      ? (estimatedValue / leverage) + brokerage
-      : 0;
-
   const client = await pool.connect();
 
   try {
@@ -222,9 +217,69 @@ async function placeOrder(userId, walletId, payload) {
 
     const wallet = walletRes.rows[0];
 
-    // 5. Balance check
+    // 5. Lock existing position (if any) — needed to work out how much of
+    // this order is "covering" an opposite existing position (needs no
+    // fresh margin, just releases what's already reserved) vs "opening/
+    // extending" a position in this order's own direction (needs margin).
+    //
+    // This is also what makes intraday short selling work: a SELL with no
+    // (or insufficient) long MIS holdings doesn't get rejected anymore —
+    // the uncovered portion opens/extends a short position instead, same
+    // as Zerodha/Groww. CNC (delivery) is intentionally left long-only:
+    // real brokers don't let you deliver shares you don't own, so a CNC
+    // SELL still requires full existing holdings.
+    const posRes = await client.query(
+      `
+      SELECT quantity
+      FROM positions
+      WHERE wallet_id = $1
+      AND instrument_key = $2
+      AND product_type = $3
+      FOR UPDATE
+      `,
+      [walletId, instrument_key, product_type]
+    );
+
+    const existingQty = posRes.rows.length
+      ? parseFloat(posRes.rows[0].quantity)
+      : 0;
+
+    // openQty = the portion of this order NOT offset by an opposite
+    // existing position — i.e. the part that opens or extends a position
+    // in this order's own direction, and therefore needs margin reserved.
+    let openQty = 0;
+
+    if (side === 'BUY') {
+      // existingQty < 0 means there's a short to cover first.
+      const coverQty = existingQty < 0 ? Math.min(-existingQty, quantity) : 0;
+      openQty = quantity - coverQty;
+    } else {
+      // SELL
+      if (product_type === 'CNC') {
+        if (existingQty < quantity) {
+          throw new ValidationError(
+            `Insufficient ${product_type} holdings for ${symbol}`
+          );
+        }
+        openQty = 0; // CNC SELL only ever closes a long — never opens a short
+      } else {
+        // existingQty > 0 means there's a long to close first; anything
+        // beyond that opens/extends a short.
+        const closeQty = existingQty > 0 ? Math.min(existingQty, quantity) : 0;
+        openQty = quantity - closeQty;
+      }
+    }
+
+    const marginRequired =
+      openQty > 0
+        ? (openQty * effectivePrice / leverage) + brokerage
+        : 0;
+
+    // 6. Balance check — applies to BUY (opening/extending a long) and now
+    // also to SELL when it opens/extends a short (MIS only), since going
+    // short is functionally the same margin commitment as going long.
     if (
-      side === 'BUY' &&
+      marginRequired > 0 &&
       parseFloat(wallet.balance) < marginRequired
     ) {
       throw new InsufficientFundsError(
@@ -232,29 +287,8 @@ async function placeOrder(userId, walletId, payload) {
       );
     }
 
-    // 6. SELL holding verification
-    if (side === 'SELL') {
-      const positionRes = await client.query(
-        `
-        SELECT quantity
-        FROM positions
-        WHERE wallet_id = $1
-        AND instrument_key = $2
-        AND product_type = $3
-        AND quantity >= $4
-        `,
-        [walletId, instrument_key, product_type, quantity]
-      );
-
-      if (!positionRes.rows.length) {
-        throw new ValidationError(
-          `Insufficient ${product_type} holdings for ${symbol}`
-        );
-      }
-    }
-
     // 7. Reserve margin
-    if (side === 'BUY' && marginRequired > 0) {
+    if (marginRequired > 0) {
       await client.query(
         `
         UPDATE wallets
@@ -452,11 +486,10 @@ async function cancelOrder(userId, orderId) {
       );
     }
 
-    // Partial release logic
-    if (
-      order.side === 'BUY' &&
-      parseFloat(order.margin_used) > 0
-    ) {
+    // Partial release logic — BUY orders that open/extend a long AND SELL
+    // orders that open/extend a short both reserve margin at placement now,
+    // so both need the same unfilled-portion refund on cancel.
+    if (parseFloat(order.margin_used) > 0) {
       const filledQty = parseFloat(order.filled_qty || 0);
 
       const unfilledQty =

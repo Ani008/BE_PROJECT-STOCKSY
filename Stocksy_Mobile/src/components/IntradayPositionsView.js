@@ -51,6 +51,7 @@ function fmtPct(n) {
 // ─── Reusable: PositionRow ────────────────────────────────────────────────────
 function PositionRow({ position, onPress }) {
   const isPos = position.unrealisedPnl >= 0;
+  const isShort = position.isShort ?? position.qty < 0;
   return (
     <TouchableOpacity
       style={styles.row}
@@ -62,10 +63,15 @@ function PositionRow({ position, onPress }) {
           <View style={styles.tag}>
             <Text style={styles.tagText}>Intraday</Text>
           </View>
+          {isShort && (
+            <View style={[styles.tag, styles.shortTag]}>
+              <Text style={[styles.tagText, styles.shortTagText]}>Short</Text>
+            </View>
+          )}
         </View>
         <Text style={styles.symbol}>{position.symbol}</Text>
         <Text style={styles.avg}>
-          Avg {fmt(position.avgCost)} · Qty {position.qty}
+          Avg {fmt(position.avgCost)} · Qty {Math.abs(position.qty)}
         </Text>
       </View>
 
@@ -118,7 +124,7 @@ export default function IntradayPositionsView({
 
     Alert.alert(
       "Exit all intraday positions?",
-      `This will place a MARKET SELL for all ${positions.length} open intraday position${
+      `This will place a MARKET order (SELL for longs, BUY for shorts) to close all ${positions.length} open intraday position${
         positions.length !== 1 ? "s" : ""
       } at the current price.`,
       [
@@ -135,19 +141,21 @@ export default function IntradayPositionsView({
   const runExitAll = async () => {
     setExiting(true);
     const results = await Promise.allSettled(
-      positions.map((pos) =>
-        placeOrder({
+      positions.map((pos) => {
+        const isShort = (pos.isShort ?? pos.qty < 0);
+        return placeOrder({
           wallet_id: pos.wallet_id,
           instrument_key: pos.instrument_key,
           symbol: pos.symbol,
           name: pos.name,
           order_type: "MARKET",
-          side: "SELL",
-          quantity: pos.qty,
+          // Shorts are closed by buying back, not selling again.
+          side: isShort ? "BUY" : "SELL",
+          quantity: Math.abs(pos.qty),
           product_type: "MIS",
           metadata: { reason: "MANUAL_EXIT_ALL" },
-        }),
-      ),
+        });
+      }),
     );
 
     const failed = results.filter((r) => r.status === "rejected");
@@ -337,7 +345,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 0.5,
     borderTopColor: L.border,
   },
-  tagRow: { flexDirection: "row", marginBottom: 4 },
+  tagRow: { flexDirection: "row", marginBottom: 4, gap: 6 },
   tag: {
     backgroundColor: L.blueTint,
     paddingHorizontal: 7,
@@ -348,6 +356,12 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "600",
     color: L.blue,
+  },
+  shortTag: {
+    backgroundColor: L.redTint,
+  },
+  shortTagText: {
+    color: L.red,
   },
   symbol: {
     fontSize: 15,
