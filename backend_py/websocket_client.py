@@ -45,7 +45,7 @@ REAL FIX — If data disappears TOO FAST (under 2 seconds):
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
-
+import log_guard
 import asyncio
 import json
 import ssl

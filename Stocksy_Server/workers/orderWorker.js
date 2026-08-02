@@ -1,6 +1,8 @@
-require("dotenv").config();
-
+// workers/orderWorker.js — top of file
+require("dotenv").config({ quiet: true });   // 1. load env vars FIRST
+require("../utils/devLogger");                 // 2. THEN apply the guard
 const { getQueue } = require("../services/queueService");
+// ...rest unchanged
 
 const { executeOrder } = require("../services/executionEngine");
 

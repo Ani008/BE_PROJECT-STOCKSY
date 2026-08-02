@@ -1,7 +1,11 @@
+import log_guard
 import yfinance as yf
 import requests
 import time
 import json
+import os
+import time
+from datetime import datetime
 
 from financials import FINANCIALS_DATA
 from company_profiles import COMPANY_PROFILES
@@ -9,7 +13,7 @@ from shareholding import SHAREHOLDING_DATA
 
 # Configuration
 SYMBOLS = ["HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK", "BAJFINANCE", "KOTAKBANK", "HDFCLIFE", "BAJAJFINSV", "TCS", "INFY", "WIPRO", "HCLTECH", "TECHM", "LTIM", "RELIANCE", "ONGC", "BPCL", "POWERGRID", "NTPC", "MARUTI", "TMCV", "BAJAJ-AUTO", "EICHERMOT", "HEROMOTOCO", "HINDUNILVR", "ITC", "NESTLEIND", "DABUR", "BRITANNIA", "SUNPHARMA", "DRREDDY", "CIPLA", "DIVISLAB", "TATASTEEL", "HINDALCO", "JSWSTEEL", "COALINDIA", "BHARTIARTL", "ADANIPORTS", "ADANIGREEN", "ULTRACEMCO", "LT", "GRASIM", "VEDL", "BEL", "IRFC", "SUZLON", "ADANIENT", "SIEMENS"] # Add all 50+ here
-NODE_BACKEND_URL = "http://localhost:5000/api/fundamentals" # Your Node.js endpoint
+NODE_BACKEND_URL = "http://localhost:5050/api/fundamentals" # Your Node.js endpoint
 
 
 INDUSTRY_PE = {
@@ -254,5 +258,31 @@ def get_optimal_fundamentals(symbol_list):
     except Exception as e:
         print(f"🚨 Could not connect to backend: {e}")
 
+
+# Times of day (24hr, local machine time) to run the fetch cycle.
+# Edit this list directly — no scheduler tool involved.
+RUN_TIMES = ["09:20", "13:00", "15:35"]
+
+# For local testing: set RUN_ONCE=true in your local .env and it fires
+# immediately and exits, instead of waiting for a RUN_TIMES slot.
+RUN_ONCE = os.getenv("RUN_ONCE", "false").lower() == "true"
+
 if __name__ == "__main__":
-    get_optimal_fundamentals(SYMBOLS)
+    if RUN_ONCE:
+        print("RUN_ONCE=true — running a single fundamentals fetch now (local test mode)...")
+        get_optimal_fundamentals(SYMBOLS)
+    else:
+        print(f"Fundamentals scheduler started. Will run daily at: {', '.join(RUN_TIMES)}")
+        last_run = {}  # tracks which slots already fired today, avoids double-firing
+        while True:
+            now = datetime.now()
+            hhmm = now.strftime("%H:%M")
+            today = now.strftime("%Y-%m-%d")
+            if hhmm in RUN_TIMES and last_run.get(hhmm) != today:
+                print(f"[{now}] Scheduled slot {hhmm} reached — running fundamentals fetch...")
+                try:
+                    get_optimal_fundamentals(SYMBOLS)
+                except Exception as e:
+                    print(f"Fundamentals cycle error: {e}")
+                last_run[hhmm] = today
+            time.sleep(30)  # check every 30s so we don't miss the minute window

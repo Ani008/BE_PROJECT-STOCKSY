@@ -1,6 +1,7 @@
-require('dotenv').config();
+require('dotenv').config({ quiet: true });   // 1. load env vars FIRST
+require('./utils/devLogger');                // 2. THEN apply the guard, now NODE_ENV is actually populated
 const { connectRedis } = require('./config/redis');
-connectRedis(); // start connecting BEFORE anything (like rateLimiter) tries to use the Redis client
+connectRedis();
 
 const express = require('express');
 const cors = require('cors');
@@ -79,7 +80,7 @@ app.use((err, req, res, next) => {
 });
 
 // ─── Start ────────────────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5050;
 server.listen(PORT, () => {
   console.log(`\n🚀 Server running on port ${PORT}`);
   console.log(`🔌 WebSocket enabled on port ${PORT}`);

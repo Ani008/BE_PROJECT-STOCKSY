@@ -1,3 +1,4 @@
+import log_guard
 import asyncio
 import json
 import os
