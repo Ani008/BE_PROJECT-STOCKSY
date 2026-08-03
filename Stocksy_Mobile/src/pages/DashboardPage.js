@@ -6,7 +6,7 @@ import { Screen, Card, AppText, SectionHeader, SegmentedToggle } from "../compon
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import Button from "../components/Button";
 import StockCard from "../components/StockCard";
@@ -203,7 +203,12 @@ const DashboardPage = ({ navigation }) => {
   const insets = useSafeAreaInsets();
 
   // ── Live prices from WebSocket ──────────────────────────────────────────────
-  const { prices, isConnected } = useMarketData();
+  // refresh() isn't defined until usePortfolio() runs below — a ref bridges
+  // the two so ORDER_FILLED/RMS_SQUARE_OFF pushes always refetch positions
+  // instead of leaving a just-covered position (or a just-filled order)
+  // looking stale until the next time this screen happens to focus.
+  const refreshRef = useRef(() => {});
+  const { prices, isConnected } = useMarketData(() => refreshRef.current());
   const {
     // Combined (kept for anything else on this screen that wants the whole book)
     positions, totals,
@@ -214,6 +219,10 @@ const DashboardPage = ({ navigation }) => {
     intradayPositions, intradayTotals,
     loading, refresh,
   } = usePortfolio(prices);
+
+  useEffect(() => {
+    refreshRef.current = refresh;
+  }, [refresh]);
   const [user, setUser] = useState(null);
 
   // Total Assets card: Delivery vs Intraday toggle. Defaults to Delivery
@@ -445,7 +454,7 @@ const DashboardPage = ({ navigation }) => {
                 .slice(0, 2)
                 .map((position) => (
                   <MiniHoldingCard
-                    key={`${position.instrument_key}:${position.product_type}`}
+                    key={`${position.wallet_id}:${position.instrument_key}:${position.product_type}`}
                     ticker={position.symbol}
                     name={`₹${position.ltp?.toLocaleString("en-IN")}`}
                     change={`${position.unrealisedPct?.toFixed(2)}%`}

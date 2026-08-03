@@ -183,12 +183,19 @@ export default function BuyOrderScreen({ navigation, route }) {
   // Intraday → MIS (leveraged) | Delivery → CNC (1x, full value)
   const productType = tradeType === "Intraday" ? "MIS" : "CNC";
   const activeLeverage = productType === "MIS" ? leverage.mis : leverage.cnc;
-  const marginRequired = orderType === "BUY" ? orderTotal / activeLeverage : 0;
+  // Intraday (MIS) reserves leveraged margin on BOTH sides now that
+  // shorting is supported — a SELL can open/extend a short exactly like a
+  // BUY opens/extends a long, and the backend charges the same leveraged
+  // margin for it (see orderService.js's openQty logic). CNC SELL is the
+  // only side that's still margin-free, since CNC can never open a short
+  // — it only ever closes an existing delivery holding.
+  const isLeveragedSide = orderType === "BUY" || productType === "MIS";
+  const marginRequired = isLeveragedSide ? orderTotal / activeLeverage : 0;
 
   const selectedWallet = wallets.find((w) => w.id === selectedWalletId);
   const walletBalance = selectedWallet?.balance || 0;
   const canAfford =
-    orderType === "BUY" ? walletBalance >= marginRequired : true;
+    isLeveragedSide ? walletBalance >= marginRequired : true;
   const canPlace =
     qtyNum > 0 && selectedWalletId && canAfford && marketStatus.isOpen && !placingOrder;
 
@@ -222,7 +229,7 @@ export default function BuyOrderScreen({ navigation, route }) {
         quantity: qtyNum,
         price: effectivePrice,
         productType,
-        amount: productType === "MIS" && orderType === "BUY" ? marginRequired : orderTotal,
+        amount: isLeveragedSide ? marginRequired : orderTotal,
         walletName: selectedWallet?.name,
       });
     } catch (e) {
@@ -438,7 +445,7 @@ export default function BuyOrderScreen({ navigation, route }) {
                   })}
                 </Text>
               </View>
-              {productType === "MIS" && orderType === "BUY" && (
+              {productType === "MIS" && (
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryKey}>Leverage</Text>
                   <View style={styles.leverageBadge}>
@@ -455,7 +462,7 @@ export default function BuyOrderScreen({ navigation, route }) {
                     { color: Colors.text, fontWeight: "700" },
                   ]}
                 >
-                  {orderType === "BUY" ? "Margin required" : "Estimated credit"}
+                  {isLeveragedSide ? "Margin required" : "Estimated credit"}
                 </Text>
                 <Text
                   style={[
@@ -464,7 +471,7 @@ export default function BuyOrderScreen({ navigation, route }) {
                   ]}
                 >
                   ₹
-                  {(orderType === "BUY" ? marginRequired : orderTotal).toLocaleString(
+                  {(isLeveragedSide ? marginRequired : orderTotal).toLocaleString(
                     "en-IN",
                     { minimumFractionDigits: 2 },
                   )}
@@ -636,7 +643,7 @@ export default function BuyOrderScreen({ navigation, route }) {
                         })}
                       </Text>
                     </Text>
-                    {orderType === "BUY" && qtyNum > 0 && !canAfford && (
+                    {isLeveragedSide && qtyNum > 0 && !canAfford && (
                       <Text style={styles.insufficientTxt}>
                         ⚠ Insufficient balance
                       </Text>

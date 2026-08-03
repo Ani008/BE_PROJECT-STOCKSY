@@ -237,7 +237,7 @@ export default function IntradayPositionsView({
             <Text style={styles.openLabel}>{positions.length} OPEN</Text>
             {positions.map((pos) => (
               <PositionRow
-                key={`${pos.instrument_key}:${pos.product_type}`}
+                key={`${pos.wallet_id}:${pos.instrument_key}:${pos.product_type}`}
                 position={pos}
                 onPress={() => onPressPosition?.(pos)}
               />

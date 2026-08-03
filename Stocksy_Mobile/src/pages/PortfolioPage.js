@@ -217,7 +217,12 @@ function PnlBreakdownRow({ label, value, pct, dimmed }) {
 
 export default function PortfolioPage({ navigation }) {
   const insets = useSafeAreaInsets();
-  const { prices } = useMarketData();          // live WS prices
+  // refresh() isn't defined until usePortfolio() runs below, but
+  // useMarketData needs a callback right now — a ref bridges the two so
+  // the ORDER_FILLED/RMS_SQUARE_OFF handler always calls the LATEST
+  // refresh without a circular hook dependency.
+  const refreshRef = useRef(() => {});
+  const { prices } = useMarketData(() => refreshRef.current());          // live WS prices
   const {
     // Holdings (CNC/delivery) — what this screen calls the "Holdings" tab
     holdingsPositions: positions,
@@ -233,6 +238,10 @@ export default function PortfolioPage({ navigation }) {
     wallets,
     loading, error, refresh,
   } = usePortfolio(prices);
+
+  useEffect(() => {
+    refreshRef.current = refresh;
+  }, [refresh]);
 
   // Holdings vs Positions toggle — delivery (CNC) and intraday (MIS) positions
   // are economically different things (different lifecycle, different risk),
@@ -460,7 +469,7 @@ export default function PortfolioPage({ navigation }) {
           ) : (
             positions.map(pos => (
               <HoldingRow
-                key={`${pos.instrument_key}:${pos.product_type}`}
+                key={`${pos.wallet_id}:${pos.instrument_key}:${pos.product_type}`}
                 position={pos}
                 onPress={() =>
                   navigation.navigate('StockDetail', {

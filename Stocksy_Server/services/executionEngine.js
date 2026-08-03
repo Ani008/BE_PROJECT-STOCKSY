@@ -291,7 +291,7 @@ async function executeOrder(jobData) {
           UPDATE positions
           SET
             quantity = $1,
-            avg_cost = CASE WHEN $1 = 0 THEN 0 ELSE avg_cost END,
+            avg_cost = CASE WHEN $1::numeric = 0 THEN 0 ELSE avg_cost END,
             realised_pnl =
               realised_pnl + $2,
             updated_at = NOW()

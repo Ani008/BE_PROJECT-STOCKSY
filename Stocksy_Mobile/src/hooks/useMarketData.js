@@ -12,7 +12,16 @@ import { showToast } from "../../services/uiBridge";
 
 const RECONNECT_DELAY_MS = 3000;
 
-export default function useMarketData() {
+/**
+ * @param {(msg: object) => void} [onOrderEvent] — called for any per-user
+ *   order push (ORDER_FILLED, ORDER_REJECTED, RMS_SQUARE_OFF), in addition
+ *   to the toast already shown. This is what lets a screen holding live
+ *   position/portfolio data (usePortfolio) actually refetch the moment a
+ *   fill lands, instead of only refreshing on next screen focus — which
+ *   can easily happen before the async fill (place → queue → worker) has
+ *   actually landed, leaving a just-covered position looking stuck open.
+ */
+export default function useMarketData(onOrderEvent) {
   const [prices, setPrices] = useState({});
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState(null);
@@ -21,6 +30,15 @@ export default function useMarketData() {
   const wsRef = useRef(null);
   const reconnectTimerRef = useRef(null);
   const isMountedRef = useRef(true);
+
+  // Ref so `connect` (memoized with []) always calls the LATEST callback
+  // without needing to be in its dep array — putting onOrderEvent there
+  // directly would tear down and reopen the socket on every render where
+  // the caller passes a fresh inline function.
+  const onOrderEventRef = useRef(onOrderEvent);
+  useEffect(() => {
+    onOrderEventRef.current = onOrderEvent;
+  }, [onOrderEvent]);
 
   const connect = useCallback(async () => {
     // Don't reconnect if already open
@@ -114,11 +132,16 @@ export default function useMarketData() {
               `${msg.side} ${msg.quantity} ${msg.symbol} filled @ ₹${msg.fillPrice?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
               'success',
             );
+            // Position/wallet state on the server just changed — let any
+            // listener (usePortfolio's refresh) refetch instead of leaving
+            // whatever was on screen before this fill landed.
+            onOrderEventRef.current?.(msg);
             return;
           }
 
           if (msg.type === 'ORDER_REJECTED') {
             showToast(`Order rejected — ${msg.reason || 'unknown reason'}`, 'error');
+            onOrderEventRef.current?.(msg);
             return;
           }
 
@@ -127,6 +150,9 @@ export default function useMarketData() {
               `${msg.symbol} auto-squared off — loss reached ${Math.round((msg.lossRatio || 0) * 100)}% of margin`,
               'warning',
             );
+            // This is also a position change (RMS force-covers/closes) —
+            // same reasoning as ORDER_FILLED above.
+            onOrderEventRef.current?.(msg);
             return;
           }
         } catch (parseErr) {
