@@ -11,22 +11,26 @@ const { initWebSocket } = require("./services/websocketService");
 const { generalLimiter } = require("./middleware/rateLimiter");
 
 const app = express();
+// app.set('trust proxy', 1); for server production server 
 
 const server = http.createServer(app);
-const allowedOrigins = [
-  "https://api.stocksy.online", // only needed if you build a browser-based admin panel later
-];
 
-// ─── Middleware ────────────────────────────────────────────────────────────────
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      if (!origin) return cb(null, true); // no Origin header = mobile app / curl / server-to-server — always allow
-      if (allowedOrigins.includes(origin)) return cb(null, true);
-      cb(new Error("Not allowed by CORS"));
-    },
-  }),
-);
+//On Production use this cors policy - 
+// const allowedOrigins = [
+//   "https://api.stocksy.online", 
+// ];
+
+// app.use(
+//   cors({
+//     origin: (origin, cb) => {
+//       if (!origin) return cb(null, true); 
+//       if (allowedOrigins.includes(origin)) return cb(null, true);
+//       cb(new Error("Not allowed by CORS"));
+//     },
+//   }),
+// );
+
+app.use(cors()); // For development, allow all origins. In production, restrict to your frontend domain.
 app.use(express.json({ limit: "5mb" }));
 
 // Global rate-limit safety net — applied before routing so it protects
@@ -47,7 +51,7 @@ app.use((req, res, next) => {
   next();
 });
 
-const { redisClient } = require("./config/redis"); // adjust to however redis.js exports its client
+const { client: redisClient } = require('./config/redis'); // adjust to however redis.js exports its client
 const { pool } = require("./config/postgres"); // adjust to however postgres.js exports its pool
 
 app.get("/health", async (req, res) => {
@@ -85,6 +89,7 @@ app.use("/api/market", require("./routes/market"));
 app.use("/api/debug", require("./routes/debug"));
 app.use("/api/revenue", require("./routes/revenue"));
 app.use("/api", require("./routes/orders"));
+app.use("/api/alerts", require("./routes/alerts"));
 
 // ─── Health check — hit this first from the app to confirm connectivity ───────
 // From the app: fetch('http://<YOUR_LAN_IP>:5000/health').then(r => r.text()).then(console.log)

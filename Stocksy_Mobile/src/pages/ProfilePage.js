@@ -12,7 +12,10 @@ import {
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
 import authService from "../../services/authService";
@@ -81,7 +84,10 @@ const ProfilePage = ({ navigation }) => {
 
   const handleSupport = () => {
     Linking.openURL(`mailto:${SUPPORT_EMAIL}`).catch(() => {
-      Alert.alert("Couldn't open email", `Reach us anytime at ${SUPPORT_EMAIL}`);
+      Alert.alert(
+        "Couldn't open email",
+        `Reach us anytime at ${SUPPORT_EMAIL}`,
+      );
     });
   };
 
@@ -107,9 +113,14 @@ const ProfilePage = ({ navigation }) => {
   return (
     <SafeAreaView style={styles.safe} edges={["left", "right"]}>
       <StatusBar style="light" />
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scroll}
+      >
         {/* ── Hero ─────────────────────────────────────────────────────────── */}
-        <View style={[styles.hero, { paddingTop: insets.top + moderateScale(16) }]}>
+        <View
+          style={[styles.hero, { paddingTop: insets.top + moderateScale(16) }]}
+        >
           <Text style={styles.heroTitle}>Profile</Text>
 
           <View style={styles.profileRow}>
@@ -141,15 +152,30 @@ const ProfilePage = ({ navigation }) => {
             onPress={() => navigation.navigate("OrderHistory")}
           >
             <View style={styles.cardLeft}>
-              <View style={[styles.iconCircle, { backgroundColor: Colors.primaryLight }]}>
-                <Ionicons name="receipt-outline" size={20} color={Colors.primaryDark} />
+              <View
+                style={[
+                  styles.iconCircle,
+                  { backgroundColor: Colors.primaryLight },
+                ]}
+              >
+                <Ionicons
+                  name="receipt-outline"
+                  size={20}
+                  color={Colors.primaryDark}
+                />
               </View>
               <View>
                 <Text style={styles.cardTitle}>Orders</Text>
-                <Text style={styles.cardSub}>Every order you've placed, all time</Text>
+                <Text style={styles.cardSub}>
+                  Every order you've placed, all time
+                </Text>
               </View>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
+            <Ionicons
+              name="chevron-forward"
+              size={20}
+              color={Colors.textMuted}
+            />
           </TouchableOpacity>
 
           {/* Account details — expands in place rather than navigating away,
@@ -161,8 +187,17 @@ const ProfilePage = ({ navigation }) => {
               onPress={() => setAccountExpanded((v) => !v)}
             >
               <View style={styles.cardLeft}>
-                <View style={[styles.iconCircle, { backgroundColor: Colors.successBg }]}>
-                  <Ionicons name="person-outline" size={20} color={Colors.success} />
+                <View
+                  style={[
+                    styles.iconCircle,
+                    { backgroundColor: Colors.successBg },
+                  ]}
+                >
+                  <Ionicons
+                    name="person-outline"
+                    size={20}
+                    color={Colors.success}
+                  />
                 </View>
                 <View>
                   <Text style={styles.cardTitle}>Account details</Text>
@@ -214,15 +249,61 @@ const ProfilePage = ({ navigation }) => {
             onPress={() => navigation.navigate("Wallet")}
           >
             <View style={styles.cardLeft}>
-              <View style={[styles.iconCircle, { backgroundColor: Colors.warningBg }]}>
-                <Ionicons name="wallet-outline" size={20} color={Colors.warning} />
+              <View
+                style={[
+                  styles.iconCircle,
+                  { backgroundColor: Colors.warningBg },
+                ]}
+              >
+                <Ionicons
+                  name="wallet-outline"
+                  size={20}
+                  color={Colors.warning}
+                />
               </View>
               <View>
                 <Text style={styles.cardTitle}>Wallet & Funds</Text>
-                <Text style={styles.cardSub}>Balances, cards & transactions</Text>
+                <Text style={styles.cardSub}>
+                  Balances, cards & transactions
+                </Text>
               </View>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
+            <Ionicons
+              name="chevron-forward"
+              size={20}
+              color={Colors.textMuted}
+            />
+          </TouchableOpacity>
+
+          {/* Alerts — price alerts & GTT orders */}
+          <TouchableOpacity
+            style={[styles.card, styles.cardHeaderRow]}
+            activeOpacity={0.7}
+            onPress={() => navigation.navigate("Alerts")}
+          >
+            <View style={styles.cardLeft}>
+              <View
+                style={[
+                  styles.iconCircle,
+                  { backgroundColor: Colors.primaryLight },
+                ]}
+              >
+                <Ionicons
+                  name="notifications-outline"
+                  size={20}
+                  color={Colors.primaryDark}
+                />
+              </View>
+              <View>
+                <Text style={styles.cardTitle}>Alerts</Text>
+                <Text style={styles.cardSub}>Price alerts & GTT orders</Text>
+              </View>
+            </View>
+            <Ionicons
+              name="chevron-forward"
+              size={20}
+              color={Colors.textMuted}
+            />
           </TouchableOpacity>
 
           {/* {Refer & Invite}
@@ -247,16 +328,33 @@ const ProfilePage = ({ navigation }) => {
           </View> */}
 
           {/* Customer support */}
-          <TouchableOpacity style={[styles.card, styles.cardHeaderRow]} activeOpacity={0.7} onPress={handleSupport}>
+          <TouchableOpacity
+            style={[styles.card, styles.cardHeaderRow]}
+            activeOpacity={0.7}
+            onPress={handleSupport}
+          >
             <View style={styles.cardLeft}>
-              <View style={[styles.iconCircle, { backgroundColor: Colors.primaryLight }]}>
-                <Ionicons name="headset-outline" size={20} color={Colors.primaryDark} />
+              <View
+                style={[
+                  styles.iconCircle,
+                  { backgroundColor: Colors.primaryLight },
+                ]}
+              >
+                <Ionicons
+                  name="headset-outline"
+                  size={20}
+                  color={Colors.primaryDark}
+                />
               </View>
               <View>
                 <Text style={styles.cardTitle}>Customer support</Text>
               </View>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
+            <Ionicons
+              name="chevron-forward"
+              size={20}
+              color={Colors.textMuted}
+            />
           </TouchableOpacity>
 
           {/* About */}
@@ -266,8 +364,17 @@ const ProfilePage = ({ navigation }) => {
             onPress={() => setAboutExpanded((v) => !v)}
           >
             <View style={styles.cardLeft}>
-              <View style={[styles.iconCircle, { backgroundColor: Colors.dangerBg }]}>
-                <Ionicons name="information-circle-outline" size={20} color={Colors.danger} />
+              <View
+                style={[
+                  styles.iconCircle,
+                  { backgroundColor: Colors.dangerBg },
+                ]}
+              >
+                <Ionicons
+                  name="information-circle-outline"
+                  size={20}
+                  color={Colors.danger}
+                />
               </View>
               <Text style={styles.cardTitle}>About</Text>
             </View>
@@ -315,9 +422,9 @@ const ProfilePage = ({ navigation }) => {
 
               <Text style={styles.aboutSectionLabel}>WHERE THIS IS HEADED</Text>
               <Text style={styles.aboutBody}>
-                Stocksy is built as the foundation for a real, licensed brokerage
-                or a white-label trading-infrastructure product the OMS,
-                risk engine, and ledgering here are architected to extend
+                Stocksy is built as the foundation for a real, licensed
+                brokerage or a white-label trading-infrastructure product the
+                OMS, risk engine, and ledgering here are architected to extend
                 beyond simulation.
               </Text>
 
@@ -326,8 +433,13 @@ const ProfilePage = ({ navigation }) => {
               <Text style={styles.aboutFounderText}>Built by Aniket</Text>
               <TouchableOpacity
                 onPress={() =>
-                  Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=Stocksy — let's talk`).catch(
-                    () => Alert.alert("Couldn't open email", `Reach out at ${SUPPORT_EMAIL}`),
+                  Linking.openURL(
+                    `mailto:${SUPPORT_EMAIL}?subject=Stocksy — let's talk`,
+                  ).catch(() =>
+                    Alert.alert(
+                      "Couldn't open email",
+                      `Reach out at ${SUPPORT_EMAIL}`,
+                    ),
                   )
                 }
                 activeOpacity={0.7}
@@ -340,8 +452,16 @@ const ProfilePage = ({ navigation }) => {
           )}
 
           {/* Logout */}
-          <TouchableOpacity style={styles.logoutCard} onPress={handleLogout} activeOpacity={0.7}>
-            <MaterialCommunityIcons name="logout" size={20} color={Colors.danger} />
+          <TouchableOpacity
+            style={styles.logoutCard}
+            onPress={handleLogout}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons
+              name="logout"
+              size={20}
+              color={Colors.danger}
+            />
             <Text style={styles.logoutText}>Logout</Text>
           </TouchableOpacity>
 
@@ -352,7 +472,11 @@ const ProfilePage = ({ navigation }) => {
             onPress={() => setDeleteModalVisible(true)}
             activeOpacity={0.7}
           >
-            <MaterialCommunityIcons name="delete-outline" size={18} color={Colors.textMuted} />
+            <MaterialCommunityIcons
+              name="delete-outline"
+              size={18}
+              color={Colors.textMuted}
+            />
             <Text style={styles.deleteAccountText}>Delete Account</Text>
           </TouchableOpacity>
         </View>

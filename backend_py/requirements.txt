@@ -1,0 +1,6 @@
+python-dotenv
+redis
+requests
+websockets
+yfinance
+protobuf

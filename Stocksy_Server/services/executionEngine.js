@@ -231,84 +231,77 @@ async function executeOrder(jobData) {
     // ─────────────────────────────────────────────────────────
 
     if (side === "BUY") {
+      // Lock any existing position first — need to know whether this BUY
+      // is covering an existing short (needs P&L + margin-release logic)
+      // or opening/extending a long (needs the old INSERT..ON CONFLICT
+      // margin logic). Previously this file only ever ran the "add to a
+      // long" path, which silently mis-booked (or crashed on exact-cover
+      // via a divide-by-zero in the avg_cost formula) any BUY meant to
+      // close a short.
       const {
-        rows: [pos],
+        rows: [existingPos],
       } = await client.query(
         `
-          INSERT INTO positions
-          (
-            user_id,
-            wallet_id,
-            instrument_key,
-            symbol,
-            name,
-            quantity,
-            avg_cost,
-            product_type
-          )
-          VALUES
-          (
-            $1,$2,$3,$4,$5,$6,$7,$8
-          )
-
-          ON CONFLICT
-          (wallet_id, instrument_key, product_type)
-
-          DO UPDATE SET
-
-            quantity =
-              positions.quantity +
-              EXCLUDED.quantity,
-
-            avg_cost =
-              (
-                positions.quantity *
-                positions.avg_cost
-
-                +
-
-                EXCLUDED.quantity *
-                EXCLUDED.avg_cost
-              )
-              /
-              (
-                positions.quantity +
-                EXCLUDED.quantity
-              ),
-
-            updated_at = NOW()
-
-          RETURNING id
-          `,
-        [
-          userId,
-          walletId,
-          instrumentKey,
-          symbol,
-          order.name || symbol,
-          qty,
-          fillPrice,
-          productType,
-        ],
+        SELECT *
+        FROM positions
+        WHERE wallet_id = $1
+        AND instrument_key = $2
+        AND product_type = $3
+        FOR UPDATE
+        `,
+        [walletId, instrumentKey, productType],
       );
 
-      positionId = pos.id;
+      const existingQty = existingPos ? parseFloat(existingPos.quantity) : 0;
 
-      // Margin adjustment — recompute what the margin SHOULD be at the
-      // actual fill price (using the same leverage the order was placed
-      // with), and refund/charge only the difference from what was
-      // reserved at placement time. This is leverage-aware: for CNC
-      // (leverage=1) this reduces to the original `marginUsed - totalCost`
-      // behavior exactly. For MIS it correctly keeps only the margin
-      // portion reserved instead of settling the full trade value.
-      const actualMarginRequired =
-        (tradeValue / leverageApplied) + brokerage;
+      // ─────────────────────────────────────────────────────────
+      // Covering an existing short (existingQty < 0)
+      // ─────────────────────────────────────────────────────────
+      if (existingQty < 0) {
+        const existingShortQty = Math.abs(existingQty);
 
-      walletDelta = actualMarginRequired;
+        if (qty > existingShortQty) {
+          await rejectOrderClient(
+            client,
+            order,
+            `Cannot flip a short to long in one order — cover the short first`,
+          );
 
-      const refund = parseFloat(marginUsed) - actualMarginRequired;
+          await client.query("COMMIT");
 
-      if (refund !== 0) {
+          return;
+        }
+
+        const avgCost = parseFloat(existingPos.avg_cost);
+
+        // Short profits when price falls — sign is flipped vs. closing
+        // a long, where realisedPnl = (fillPrice - avgCost) * qty.
+        realisedPnl = (avgCost - fillPrice) * qty - brokerage;
+
+        const marginToRelease = (avgCost * qty) / leverageApplied;
+
+        const walletCredit = marginToRelease + realisedPnl;
+
+        walletDelta = walletCredit;
+
+        const newQty = existingQty + qty; // moves toward 0 from below
+
+        await client.query(
+          `
+          UPDATE positions
+          SET
+            quantity = $1,
+            avg_cost = CASE WHEN $1 = 0 THEN 0 ELSE avg_cost END,
+            realised_pnl =
+              realised_pnl + $2,
+            updated_at = NOW()
+          WHERE id = $3
+          `,
+          [newQty, realisedPnl, existingPos.id],
+        );
+
+        positionId = existingPos.id;
+
         await client.query(
           `
           UPDATE wallets
@@ -317,10 +310,104 @@ async function executeOrder(jobData) {
             updated_at = NOW()
           WHERE id = $2
           `,
-          [refund, walletId],
+          [walletCredit, walletId],
         );
       }
 
+      // ─────────────────────────────────────────────────────────
+      // Opening / extending a long (existingQty >= 0) — original logic
+      // ─────────────────────────────────────────────────────────
+      else {
+        const {
+          rows: [pos],
+        } = await client.query(
+          `
+            INSERT INTO positions
+            (
+              user_id,
+              wallet_id,
+              instrument_key,
+              symbol,
+              name,
+              quantity,
+              avg_cost,
+              product_type
+            )
+            VALUES
+            (
+              $1,$2,$3,$4,$5,$6,$7,$8
+            )
+
+            ON CONFLICT
+            (wallet_id, instrument_key, product_type)
+
+            DO UPDATE SET
+
+              quantity =
+                positions.quantity +
+                EXCLUDED.quantity,
+
+              avg_cost =
+                (
+                  positions.quantity *
+                  positions.avg_cost
+
+                  +
+
+                  EXCLUDED.quantity *
+                  EXCLUDED.avg_cost
+                )
+                /
+                (
+                  positions.quantity +
+                  EXCLUDED.quantity
+                ),
+
+              updated_at = NOW()
+
+            RETURNING id
+            `,
+          [
+            userId,
+            walletId,
+            instrumentKey,
+            symbol,
+            order.name || symbol,
+            qty,
+            fillPrice,
+            productType,
+          ],
+        );
+
+        positionId = pos.id;
+
+        // Margin adjustment — recompute what the margin SHOULD be at the
+        // actual fill price (using the same leverage the order was placed
+        // with), and refund/charge only the difference from what was
+        // reserved at placement time. This is leverage-aware: for CNC
+        // (leverage=1) this reduces to the original `marginUsed - totalCost`
+        // behavior exactly. For MIS it correctly keeps only the margin
+        // portion reserved instead of settling the full trade value.
+        const actualMarginRequired =
+          (tradeValue / leverageApplied) + brokerage;
+
+        walletDelta = actualMarginRequired;
+
+        const refund = parseFloat(marginUsed) - actualMarginRequired;
+
+        if (refund !== 0) {
+          await client.query(
+            `
+            UPDATE wallets
+            SET
+              balance = balance + $1,
+              updated_at = NOW()
+            WHERE id = $2
+            `,
+            [refund, walletId],
+          );
+        }
+      }
     }
     
 
@@ -342,11 +429,17 @@ async function executeOrder(jobData) {
         [walletId, instrumentKey, productType],
       );
 
-      if (!pos) {
+      const existingQty = pos ? parseFloat(pos.quantity) : 0;
+
+      // ─────────────────────────────────────────────────────────
+      // CNC — delivery only, can never open a short. Must already
+      // hold at least `qty` shares (unchanged behavior).
+      // ─────────────────────────────────────────────────────────
+      if (productType === "CNC" && existingQty < qty) {
         await rejectOrderClient(
           client,
           order,
-          `No ${productType} position available for ${symbol}`,
+          `Insufficient ${productType} holdings for ${symbol}`,
         );
 
         await client.query("COMMIT");
@@ -354,77 +447,178 @@ async function executeOrder(jobData) {
         return;
       }
 
-      const avgCost = parseFloat(pos.avg_cost);
-
-      const oldQty = parseFloat(pos.quantity);
-
-      if (qty > oldQty) {
-        await rejectOrderClient(client, order, `Insufficient quantity`);
+      // ─────────────────────────────────────────────────────────
+      // MIS flip guard — selling more of a long than you hold would
+      // flip straight into a short in one fill. Reject and ask for
+      // two orders instead of guessing cost-basis math for that case.
+      // ─────────────────────────────────────────────────────────
+      if (existingQty > 0 && qty > existingQty) {
+        await rejectOrderClient(
+          client,
+          order,
+          `Cannot flip a long position to short in one order — close the long first`,
+        );
 
         await client.query("COMMIT");
 
         return;
       }
 
-      realisedPnl = (fillPrice - avgCost) * qty - brokerage;
+      // ─────────────────────────────────────────────────────────
+      // Closing (all or part of) an existing long — original logic
+      // ─────────────────────────────────────────────────────────
+      if (existingQty > 0) {
+        const avgCost = parseFloat(pos.avg_cost);
 
-      // Credit = margin portion being released + realised P&L —
-      // NOT the full sale value. For CNC (leverage=1) this collapses
-      // to exactly the old `totalCost` behavior (full value back).
-      // For MIS, only the margin actually reserved at buy time gets
-      // released, plus/minus whatever was won or lost — crediting
-      // full sale value here would hand back money that was never
-      // taken from the wallet in the first place.
-      const positionLeverage = getLeverage(symbol, productType);
-      const marginToRelease = (avgCost * qty) / positionLeverage;
-      const walletCredit = marginToRelease + realisedPnl;
+        realisedPnl = (fillPrice - avgCost) * qty - brokerage;
 
-      walletDelta = walletCredit;
+        // Credit = margin portion being released + realised P&L —
+        // NOT the full sale value. For CNC (leverage=1) this collapses
+        // to exactly the old `totalCost` behavior (full value back).
+        // For MIS, only the margin actually reserved at buy time gets
+        // released, plus/minus whatever was won or lost — crediting
+        // full sale value here would hand back money that was never
+        // taken from the wallet in the first place.
+        const positionLeverage = getLeverage(symbol, productType);
+        const marginToRelease = (avgCost * qty) / positionLeverage;
+        const walletCredit = marginToRelease + realisedPnl;
 
-      const newQty = oldQty - qty;
+        walletDelta = walletCredit;
 
-      if (newQty <= 0) {
+        const newQty = existingQty - qty;
+
+        if (newQty <= 0) {
+          await client.query(
+            `
+            UPDATE positions
+            SET
+              quantity = 0,
+              avg_cost = 0,
+              realised_pnl =
+                realised_pnl + $1,
+              updated_at = NOW()
+            WHERE id = $2
+            `,
+            [realisedPnl, pos.id],
+          );
+        } else {
+          await client.query(
+            `
+            UPDATE positions
+            SET
+              quantity = $1,
+              realised_pnl =
+                realised_pnl + $2,
+              updated_at = NOW()
+            WHERE id = $3
+            `,
+            [newQty, realisedPnl, pos.id],
+          );
+        }
+
+        positionId = pos.id;
+
+        // Credit wallet
         await client.query(
           `
-          UPDATE positions
+          UPDATE wallets
           SET
-            quantity = 0,
-            avg_cost = 0,
-            realised_pnl =
-              realised_pnl + $1,
+            balance = balance + $1,
             updated_at = NOW()
           WHERE id = $2
           `,
-          [realisedPnl, pos.id],
-        );
-      } else {
-        await client.query(
-          `
-          UPDATE positions
-          SET
-            quantity = $1,
-            realised_pnl =
-              realised_pnl + $2,
-            updated_at = NOW()
-          WHERE id = $3
-          `,
-          [newQty, realisedPnl, pos.id],
+          [walletCredit, walletId],
         );
       }
 
-      positionId = pos.id;
+      // ─────────────────────────────────────────────────────────
+      // Opening / extending a short (MIS only — CNC with insufficient
+      // holdings was already rejected above)
+      // ─────────────────────────────────────────────────────────
+      else {
+        const actualMarginRequired =
+          (qty * fillPrice) / leverageApplied + brokerage;
 
-      // Credit wallet
-      await client.query(
-        `
-        UPDATE wallets
-        SET
-          balance = balance + $1,
-          updated_at = NOW()
-        WHERE id = $2
-        `,
-        [walletCredit, walletId],
-      );
+        walletDelta = actualMarginRequired;
+        realisedPnl = 0;
+
+        const refund = parseFloat(marginUsed) - actualMarginRequired;
+
+        const {
+          rows: [newPos],
+        } = await client.query(
+          `
+            INSERT INTO positions
+            (
+              user_id,
+              wallet_id,
+              instrument_key,
+              symbol,
+              name,
+              quantity,
+              avg_cost,
+              product_type
+            )
+            VALUES
+            (
+              $1,$2,$3,$4,$5,$9,$7,$8
+            )
+
+            ON CONFLICT
+            (wallet_id, instrument_key, product_type)
+
+            DO UPDATE SET
+
+              avg_cost =
+                (
+                  ABS(positions.quantity) *
+                  positions.avg_cost
+
+                  +
+
+                  $6 * $7
+                )
+                /
+                (
+                  ABS(positions.quantity) +
+                  $6
+                ),
+
+              quantity =
+                positions.quantity - $6,
+
+              updated_at = NOW()
+
+            RETURNING id
+            `,
+          [
+            userId,
+            walletId,
+            instrumentKey,
+            symbol,
+            order.name || symbol,
+            qty,
+            fillPrice,
+            productType,
+            -qty,
+          ],
+        );
+
+        positionId = newPos.id;
+
+        if (refund !== 0) {
+          await client.query(
+            `
+            UPDATE wallets
+            SET
+              balance = balance + $1,
+              updated_at = NOW()
+            WHERE id = $2
+            `,
+            [refund, walletId],
+          );
+        }
+      }
     }
 
     // ─────────────────────────────────────────────────────────
@@ -708,8 +902,13 @@ async function rejectOrder(
       [orderId, JSON.stringify({ reason })],
     );
 
-    // Refund reserved margin
-    if (side === "BUY" && parseFloat(marginUsed) > 0) {
+    // Refund reserved margin — applies to BUY orders that open/extend a
+    // long AND to SELL orders that open/extend a short (MIS), since both
+    // reserve margin at placement time. This previously only checked
+    // side === "BUY", which silently swallowed the refund for any
+    // rejected short-open order — the margin stayed deducted from the
+    // wallet with no trade, no position, and no ledger row to show for it.
+    if (parseFloat(marginUsed) > 0) {
       await pool.query(
         `
         UPDATE wallets
@@ -718,6 +917,43 @@ async function rejectOrder(
         WHERE id = $2
         `,
         [marginUsed, walletId],
+      );
+
+      const {
+        rows: [walletAfter],
+      } = await pool.query(
+        `SELECT balance FROM wallets WHERE id = $1`,
+        [walletId],
+      );
+
+      await pool.query(
+        `
+        INSERT INTO wallet_transactions
+        (
+          wallet_id,
+          type,
+          amount,
+          balance_after,
+          ref_order_id,
+          note
+        )
+        VALUES
+        (
+          $1,
+          'order_release',
+          $2,
+          $3,
+          $4,
+          $5
+        )
+        `,
+        [
+          walletId,
+          marginUsed,
+          walletAfter.balance,
+          orderId,
+          `Reject refund for ${side} order (${reason})`,
+        ],
       );
     }
 
@@ -765,7 +1001,9 @@ async function rejectOrderClient(client, order, reason) {
     [order.id, JSON.stringify({ reason })],
   );
 
-  if (order.side === "BUY" && parseFloat(order.margin_used) > 0) {
+  // Same fix as rejectOrder() — refund applies regardless of side, since
+  // SELL orders that open/extend a short reserve margin too.
+  if (parseFloat(order.margin_used) > 0) {
     await client.query(
       `
       UPDATE wallets
@@ -774,6 +1012,43 @@ async function rejectOrderClient(client, order, reason) {
       WHERE id = $2
       `,
       [order.margin_used, order.wallet_id],
+    );
+
+    const {
+      rows: [walletAfter],
+    } = await client.query(
+      `SELECT balance FROM wallets WHERE id = $1`,
+      [order.wallet_id],
+    );
+
+    await client.query(
+      `
+      INSERT INTO wallet_transactions
+      (
+        wallet_id,
+        type,
+        amount,
+        balance_after,
+        ref_order_id,
+        note
+      )
+      VALUES
+      (
+        $1,
+        'order_release',
+        $2,
+        $3,
+        $4,
+        $5
+      )
+      `,
+      [
+        order.wallet_id,
+        order.margin_used,
+        walletAfter.balance,
+        order.id,
+        `Reject refund for ${order.side} order (${reason})`,
+      ],
     );
   }
 
