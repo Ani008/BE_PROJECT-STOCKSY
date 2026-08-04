@@ -12,26 +12,26 @@ const { scheduleAlertWatcher } = require("./services/alertWatcherService");
 const { generalLimiter } = require("./middleware/rateLimiter");
 
 const app = express();
-// app.set('trust proxy', 1); for server production server 
+app.set('trust proxy', 1); //for server production server 
 
 const server = http.createServer(app);
 
 //On Production use this cors policy - 
-// const allowedOrigins = [
-//   "https://api.stocksy.online", 
-// ];
+const allowedOrigins = [
+  "https://api.stocksy.online", 
+];
 
-// app.use(
-//   cors({
-//     origin: (origin, cb) => {
-//       if (!origin) return cb(null, true); 
-//       if (allowedOrigins.includes(origin)) return cb(null, true);
-//       cb(new Error("Not allowed by CORS"));
-//     },
-//   }),
-// );
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true); 
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      cb(new Error("Not allowed by CORS"));
+    },
+  }),
+);
 
-app.use(cors()); // For development, allow all origins. In production, restrict to your frontend domain.
+//app.use(cors()); // For development, allow all origins. In production, restrict to your frontend domain.
 app.use(express.json({ limit: "5mb" }));
 
 // Global rate-limit safety net — applied before routing so it protects
