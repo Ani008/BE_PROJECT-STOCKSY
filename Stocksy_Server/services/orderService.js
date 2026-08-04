@@ -37,6 +37,13 @@ const SLIPPAGE_BPS = 5; // 0.05%
 // ─────────────────────────────────────────────────────────────
 
 function applySlippage(ltp, side) {
+  // QA/test-mode bypass: set DISABLE_SLIPPAGE=true to get deterministic
+  // fills that match pinned Redis LTPs exactly (see test plan v2).
+  // Leave unset/false in prod/staging so real slippage simulation stays on.
+  if (process.env.DISABLE_SLIPPAGE === 'true') {
+    return ltp;
+  }
+
   const bps = (Math.random() * SLIPPAGE_BPS) / 10000;
   return side === 'BUY'
     ? ltp * (1 + bps)

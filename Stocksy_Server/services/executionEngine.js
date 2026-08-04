@@ -235,6 +235,12 @@ async function executeOrder(jobData) {
     // actual cash that moved, which is what the transaction ledger and
     // the transactions screen should show — not the full stock value.
     let walletDelta = 0;
+    // True direction of this fill's cash movement — set explicitly in
+    // whichever branch below actually runs. Do NOT derive this from
+    // `side` elsewhere: a SELL can be a debit (opening a short) or a
+    // credit (closing a long), and a BUY can be a debit (opening/
+    // extending a long) or a credit (covering a short).
+    let isDebit = null;
 
     // ─────────────────────────────────────────────────────────
     // BUY
@@ -293,6 +299,7 @@ async function executeOrder(jobData) {
         const walletCredit = marginToRelease + realisedPnl;
 
         walletDelta = walletCredit;
+        isDebit = false; // covering a short releases margin + P&L → credit
 
         const newQty = existingQty + qty; // moves toward 0 from below
 
@@ -402,6 +409,7 @@ async function executeOrder(jobData) {
           (tradeValue / leverageApplied) + totalCharges;
 
         walletDelta = actualMarginRequired;
+        isDebit = true; // opening/extending a long reserves margin → debit
 
         const refund = parseFloat(marginUsed) - actualMarginRequired;
 
@@ -494,6 +502,7 @@ async function executeOrder(jobData) {
         const walletCredit = marginToRelease + realisedPnl;
 
         walletDelta = walletCredit;
+        isDebit = false; // closing a long releases margin + P&L → credit
 
         const newQty = existingQty - qty;
 
@@ -550,6 +559,7 @@ async function executeOrder(jobData) {
           (qty * fillPrice) / leverageApplied + totalCharges;
 
         walletDelta = actualMarginRequired;
+        isDebit = true; // opening/extending a short reserves margin → debit
         realisedPnl = 0;
 
         const refund = parseFloat(marginUsed) - actualMarginRequired;
@@ -768,6 +778,7 @@ async function executeOrder(jobData) {
         wallet_id,
         type,
         amount,
+        direction,
         balance_after,
         ref_order_id,
         note
@@ -779,12 +790,14 @@ async function executeOrder(jobData) {
         $2,
         $3,
         $4,
-        $5
+        $5,
+        $6
       )
       `,
       [
         walletId,
         Math.abs(walletDelta),
+        isDebit ? 'debit' : 'credit',
         walletAfter.balance,
         orderId,
         `${side} ${qty} ${symbol} @ ₹${fillPrice.toFixed(2)}`,

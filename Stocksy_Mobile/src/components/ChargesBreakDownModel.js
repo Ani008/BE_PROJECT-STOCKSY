@@ -84,6 +84,8 @@ function computeCharges(orderValue, side, productType) {
   };
 }
 
+export { computeCharges };
+
 const ChargesBreakdownModal = ({
   visible,
   onClose,

@@ -21,7 +21,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { API_BASE_URL, WEB_CLIENT_ID } from "../config/env";
 //import { GoogleSignin } from "@react-native-google-signin/google-signin";
-import * as SecureStore from "expo-secure-store";
 
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
@@ -123,8 +122,7 @@ const SignupPage = ({ navigation }) => {
         return;
       }
 
-      await SecureStore.setItemAsync("token", data.token);
-      await SecureStore.setItemAsync("user", JSON.stringify(data));
+      await authService.persistGoogleSession(data);
 
       navigation.replace("MainTabs");
     } catch (err) {

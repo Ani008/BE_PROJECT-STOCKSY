@@ -20,7 +20,7 @@ import {
 } from "react-native-safe-area-context";
 import CreateWalletModal from "../components/CreateWalletModal";
 import MarketClosedModal from "../components/MarketClosedModal";
-import ChargesBreakdownModal from "../components/ChargesBreakDownModel";
+import ChargesBreakdownModal, { computeCharges } from "../components/ChargesBreakDownModel";
 import { walletService } from "../../services/walletService";
 import { fetchWallets, createWallet } from "../../services/walletService";
 import { placeOrder } from "../../services/orderService";
@@ -199,7 +199,18 @@ export default function BuyOrderScreen({ navigation, route }) {
   // only side that's still margin-free, since CNC can never open a short
   // — it only ever closes an existing delivery holding.
   const isLeveragedSide = orderType === "BUY" || productType === "MIS";
-  const marginRequired = isLeveragedSide ? orderTotal / activeLeverage : 0;
+
+  // Mirrors orderService.js's real marginRequired formula exactly:
+  // (openQty * effectivePrice / leverage) + totalCharges. Previously this
+  // only did the leverage division and never added charges, so the
+  // on-screen estimate (and the canAfford check below, which uses this
+  // same value) understated what the wallet will actually need — the
+  // backend was always right, this was purely a frontend display/
+  // affordability-check gap.
+  const estimatedCharges = computeCharges(orderTotal, orderType, productType);
+  const marginRequired = isLeveragedSide
+    ? orderTotal / activeLeverage + estimatedCharges.total
+    : 0;
 
   const selectedWallet = wallets.find((w) => w.id === selectedWalletId);
   const walletBalance = selectedWallet?.balance || 0;

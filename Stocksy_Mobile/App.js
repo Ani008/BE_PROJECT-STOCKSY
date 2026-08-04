@@ -22,6 +22,7 @@ TextInput.defaultProps.allowFontScaling = false;
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { ToastProvider } from "./src/context/ToastProvider";
 import SessionExpiredScreen from "./src/components/SessionExpiredScreen";
+import SplashVideoScreen from "./src/components/SplashVideoScreen";
 import { registerSessionExpiredHandler } from "./services/uiBridge";
 
 // ─── Auth screens ─────────────────────────────────────────────────────────────
@@ -127,11 +128,21 @@ function MainTabs() {
 const Stack = createNativeStackNavigator();
 
 export default function App() {
+  // Video splash plays first, on every cold launch, regardless of auth
+  // state — this is intentionally checked before isAuthenticated so it
+  // shows even for already-logged-in users, not just first-time/logged-out
+  // ones.
+  const [showSplashVideo, setShowSplashVideo] = useState(true);
+
   // null = still checking, true = has token, false = no token
   const [isAuthenticated, setIsAuthenticated] = useState(null);
   const [sessionExpired, setSessionExpired] = useState(false);
 
   useEffect(() => {
+    // Runs in parallel with the splash video (not after it) — by the
+    // time the ~4s video finishes, this has almost always already
+    // resolved, so there's no extra spinner flash once the splash
+    // video hands off to the real app.
     const checkToken = async () => {
       const token = await getStoredToken();
       setIsAuthenticated(!!token);
@@ -155,6 +166,10 @@ export default function App() {
     setSessionExpired(false);
     setIsAuthenticated(false);
   };
+
+  if (showSplashVideo) {
+    return <SplashVideoScreen onFinish={() => setShowSplashVideo(false)} />;
+  }
 
   // ── Splash / loading state ──────────────────────────────────────────────────
   // Shown for the fraction of a second while SecureStore is read.
