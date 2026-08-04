@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet, Modal, TouchableOpacity, ActivityIndicator } from "react-native";
+import { KeyboardAvoidingView, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import Input from "./Input";
@@ -43,6 +44,10 @@ const DeleteAccountModal = ({ visible, onConfirm, onCancel, loading }) => {
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={handleClose}>
+      <KeyboardAvoidingView
+    behavior={Platform.OS === "ios" ? "padding" : "height"}
+    style={{ flex: 1, justifyContent: "flex-end" }}  // adjust to match your existing overlay/sheet layout
+  >
       <View style={styles.overlay}>
         <View style={styles.card}>
           <View style={styles.iconWrap}>
@@ -92,6 +97,7 @@ const DeleteAccountModal = ({ visible, onConfirm, onCancel, loading }) => {
           </View>
         </View>
       </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };

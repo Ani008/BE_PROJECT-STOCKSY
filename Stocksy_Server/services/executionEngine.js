@@ -23,6 +23,8 @@ const {
   getLivePrice,
 } = require("./orderService");
 
+const { calculateCharges } = require("../utils/feeCalculator");
+
 const { notifyClient } = require("./websocketService");
 const { getLeverage } = require("../config/leverage");
 
@@ -153,8 +155,16 @@ async function executeOrder(jobData) {
 
   const brokerage = calcBrokerage(tradeValue);
 
+  // Full realistic charge for this fill (brokerage + STT + exchange txn
+  // charge + SEBI charges + stamp duty + GST) — this is what actually
+  // moves in/out of the wallet below, not just the brokerage line.
+  // brokerage_amount is still tracked separately for platform-revenue
+  // reporting (see step 7b) — that accounting distinction is unchanged.
+  const charges = calculateCharges(tradeValue, side, productType);
+  const totalCharges = charges.totalCharges;
+
   const totalCost =
-    side === "BUY" ? tradeValue + brokerage : tradeValue - brokerage;
+    side === "BUY" ? tradeValue + totalCharges : tradeValue - totalCharges;
 
   // ───────────────────────────────────────────────────────────
   // 4. Begin Transaction
@@ -276,7 +286,7 @@ async function executeOrder(jobData) {
 
         // Short profits when price falls — sign is flipped vs. closing
         // a long, where realisedPnl = (fillPrice - avgCost) * qty.
-        realisedPnl = (avgCost - fillPrice) * qty - brokerage;
+        realisedPnl = (avgCost - fillPrice) * qty - totalCharges;
 
         const marginToRelease = (avgCost * qty) / leverageApplied;
 
@@ -389,7 +399,7 @@ async function executeOrder(jobData) {
         // behavior exactly. For MIS it correctly keeps only the margin
         // portion reserved instead of settling the full trade value.
         const actualMarginRequired =
-          (tradeValue / leverageApplied) + brokerage;
+          (tradeValue / leverageApplied) + totalCharges;
 
         walletDelta = actualMarginRequired;
 
@@ -470,7 +480,7 @@ async function executeOrder(jobData) {
       if (existingQty > 0) {
         const avgCost = parseFloat(pos.avg_cost);
 
-        realisedPnl = (fillPrice - avgCost) * qty - brokerage;
+        realisedPnl = (fillPrice - avgCost) * qty - totalCharges;
 
         // Credit = margin portion being released + realised P&L —
         // NOT the full sale value. For CNC (leverage=1) this collapses
@@ -537,7 +547,7 @@ async function executeOrder(jobData) {
       // ─────────────────────────────────────────────────────────
       else {
         const actualMarginRequired =
-          (qty * fillPrice) / leverageApplied + brokerage;
+          (qty * fillPrice) / leverageApplied + totalCharges;
 
         walletDelta = actualMarginRequired;
         realisedPnl = 0;
@@ -641,6 +651,7 @@ async function executeOrder(jobData) {
         quantity,
         price,
         brokerage,
+        total_charges,
         total_value,
         realised_pnl,
         executed_at
@@ -648,8 +659,8 @@ async function executeOrder(jobData) {
       VALUES
       (
         $1,$2,$3,$4,$5,$6,
-        $7,$8,$9,$10,$11,
-        $12,NOW()
+        $7,$8,$9,$10,$11,$12,
+        $13,NOW()
       )
       RETURNING id
       `,
@@ -664,6 +675,7 @@ async function executeOrder(jobData) {
         qty,
         fillPrice,
         brokerage,
+        totalCharges,
         tradeValue,
         side === "SELL" ? realisedPnl : null,
       ],
@@ -672,11 +684,16 @@ async function executeOrder(jobData) {
     // ─────────────────────────────────────────────────────────
     // 7b. Platform Revenue Ledger
     // ─────────────────────────────────────────────────────────
-    // The brokerage line above is the ONLY thing Stocksy actually earns
-    // on this trade — STT, exchange charges, SEBI charges, stamp duty
-    // and GST (shown to the user on the charges breakdown sheet) are all
+    // brokerage_amount is still the ONLY thing Stocksy actually keeps —
+    // STT, exchange charges, SEBI charges, stamp duty and GST are
     // statutory pass-throughs to the government/exchange/regulator, not
-    // platform revenue, so they are deliberately NOT recorded here.
+    // platform revenue. That distinction is unchanged.
+    //
+    // What DOES change here: the full breakdown is now computed and
+    // persisted too (not just brokerage), so admin reporting has an
+    // accurate picture of total charges per trade, not just the
+    // revenue slice. See utils/feeCalculator.js — this uses the exact
+    // same formula shown to the user on the charges breakdown sheet.
     // Written in the same transaction as the trade so revenue and
     // trades can never drift out of sync.
 
@@ -694,12 +711,19 @@ async function executeOrder(jobData) {
         product_type,
         trade_value,
         brokerage_amount,
+        stt,
+        exchange_txn_charge,
+        sebi_charges,
+        stamp_duty,
+        gst,
+        total_charges,
         earned_at
       )
       VALUES
       (
         $1,$2,$3,$4,$5,$6,
-        $7,$8,$9,$10,NOW()
+        $7,$8,$9,$10,$11,$12,
+        $13,$14,$15,$16,NOW()
       )
       `,
       [
@@ -713,6 +737,12 @@ async function executeOrder(jobData) {
         productType,
         tradeValue,
         brokerage,
+        charges.stt,
+        charges.exchangeTxnCharge,
+        charges.sebiCharges,
+        charges.stampDuty,
+        charges.gst,
+        charges.totalCharges,
       ],
     );
 
@@ -788,6 +818,7 @@ async function executeOrder(jobData) {
           quantity: qty,
           tradeValue,
           brokerage,
+          totalCharges,
           realisedPnl,
           ltp,
         }),
@@ -832,6 +863,7 @@ async function executeOrder(jobData) {
       fillPrice: parseFloat(fillPrice.toFixed(2)),
       tradeValue: parseFloat(tradeValue.toFixed(2)),
       brokerage: parseFloat(brokerage.toFixed(4)),
+      totalCharges: parseFloat(totalCharges.toFixed(2)),
       realisedPnl: side === "SELL" ? parseFloat(realisedPnl.toFixed(2)) : null,
       walletBalance: parseFloat(walletAfter.balance),
       ts: Date.now(),

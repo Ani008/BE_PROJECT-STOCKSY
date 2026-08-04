@@ -23,7 +23,10 @@ import CardCustomizerModal from "../components/Cardcustomizermodal";
 import TransactionRow from "../components/TransactionRow";
 import Dashboard from "./DashboardPage";
 
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import {
   fetchWallets,
   createWallet,
@@ -33,7 +36,13 @@ import {
 import { fetchTransactions } from "../../services/transactionService";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { Colors, Typography, fontScale, moderateScale, SCREEN_WIDTH } from "../theme";
+import {
+  Colors,
+  Typography,
+  fontScale,
+  moderateScale,
+  SCREEN_WIDTH,
+} from "../theme";
 
 // ─── Card stack sizing ──────────────────────────────────────────────────────
 // The demo card + its two fanned "peeking" shadow cards sit beside the
@@ -52,8 +61,14 @@ const STACK_MARGIN_LEFT = moderateScale(16);
 const CARD_MAX_WIDTH = 300;
 
 const availableForStack =
-  SCREEN_WIDTH - CARD_SECTION_PADDING * 2 - ACTION_COLUMN_SPACE - STACK_MARGIN_LEFT;
-const STACK_AREA_WIDTH = Math.min(availableForStack, CARD_MAX_WIDTH * (310 / 300));
+  SCREEN_WIDTH -
+  CARD_SECTION_PADDING * 2 -
+  ACTION_COLUMN_SPACE -
+  STACK_MARGIN_LEFT;
+const STACK_AREA_WIDTH = Math.min(
+  availableForStack,
+  CARD_MAX_WIDTH * (310 / 300),
+);
 const CARD_WIDTH = STACK_AREA_WIDTH * (300 / 310);
 const CARD_HEIGHT = CARD_WIDTH * (180 / 300);
 const STACK_AREA_HEIGHT = CARD_HEIGHT * (210 / 180);
@@ -84,6 +99,7 @@ const WALLET_ICONS = [
 const SKIN_STORAGE_KEY = "@stocksy_card_skin";
 
 const WalletScreen = ({ navigation }) => {
+  const insets = useSafeAreaInsets();
   const [demoBalance, setDemoBalance] = useState(0);
   const [wallets, setWallets] = useState([]);
   const [recentTransactions, setRecentTransactions] = useState([]);
@@ -175,7 +191,9 @@ const WalletScreen = ({ navigation }) => {
       setDemoBalance(data.demoBalance);
       setWallets(data.wallets);
       setModalVisible(false);
-      fetchTransactions(5).then(setRecentTransactions).catch(() => {});
+      fetchTransactions(5)
+        .then(setRecentTransactions)
+        .catch(() => {});
     } catch (err) {
       // Global toast already covers this.
     } finally {
@@ -318,12 +336,13 @@ const WalletScreen = ({ navigation }) => {
             </TouchableOpacity>
             <Text style={styles.actionLabel}>Create</Text>
 
-
-            <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate("Home")}>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => navigation.navigate("Home")}
+            >
               <Ionicons name="arrow-up-outline" size={20} color={Colors.text} />
             </TouchableOpacity>
             <Text style={styles.actionLabel}>Invest</Text>
-
 
             <TouchableOpacity
               style={styles.actionButton}
@@ -381,7 +400,9 @@ const WalletScreen = ({ navigation }) => {
           <View style={styles.breakDivider} />
 
           <View style={styles.breakdownItem}>
-            <View style={[styles.breakDot, { backgroundColor: Colors.primary }]} />
+            <View
+              style={[styles.breakDot, { backgroundColor: Colors.primary }]}
+            />
             <View>
               <Text style={styles.breakLabel}>Allocated</Text>
               <Text style={styles.breakValue}>
@@ -412,7 +433,11 @@ const WalletScreen = ({ navigation }) => {
           {wallets.length === 0 ? (
             <View style={styles.emptyState}>
               <View style={styles.emptyIconRing}>
-                <Ionicons name="wallet-outline" size={28} color={Colors.textMuted} />
+                <Ionicons
+                  name="wallet-outline"
+                  size={28}
+                  color={Colors.textMuted}
+                />
               </View>
               <Text style={styles.emptyTitle}>No sub Wallets yet</Text>
               <Text style={styles.emptySubtitle}>
@@ -456,7 +481,11 @@ const WalletScreen = ({ navigation }) => {
           {recentTransactions.length === 0 ? (
             <View style={styles.emptyTransactions}>
               <View style={styles.emptyIconRing}>
-                <Ionicons name="receipt-outline" size={28} color={Colors.textMuted} />
+                <Ionicons
+                  name="receipt-outline"
+                  size={28}
+                  color={Colors.textMuted}
+                />
               </View>
               <Text style={styles.emptyTitle}>No transactions yet</Text>
               <Text style={styles.emptySubtitle}>
@@ -464,7 +493,9 @@ const WalletScreen = ({ navigation }) => {
               </Text>
             </View>
           ) : (
-            recentTransactions.map((tx) => <TransactionRow key={tx.id} tx={tx} />)
+            recentTransactions.map((tx) => (
+              <TransactionRow key={tx.id} tx={tx} />
+            ))
           )}
         </Animated.View>
 
@@ -472,7 +503,12 @@ const WalletScreen = ({ navigation }) => {
       </ScrollView>
 
       {/* ── Bottom CTA ──────────────────────────────────────────────── */}
-      <View style={styles.bottomBar}>
+      <View
+        style={[
+          styles.bottomBar,
+          { paddingBottom: moderateScale(12) + insets.bottom },
+        ]}
+      >
         <TouchableOpacity
           style={styles.addMoneyBtn}
           onPress={() => setModalVisible(true)}
@@ -823,8 +859,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingHorizontal: moderateScale(20),
-    paddingBottom: moderateScale(32),
     paddingTop: moderateScale(12),
+    // paddingBottom removed — now dynamic via insets.bottom above
     backgroundColor: "rgba(247,248,250,0.95)",
     borderTopWidth: 1,
     borderTopColor: Colors.divider,

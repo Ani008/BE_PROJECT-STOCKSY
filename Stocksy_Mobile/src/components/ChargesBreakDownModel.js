@@ -12,6 +12,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 /**
  * ChargesBreakdownModal
@@ -21,13 +22,13 @@ import { Colors, Typography, fontScale, moderateScale } from "../theme";
  * Walks through every line item that makes up the estimated charges
  * for the order currently being built.
  *
- * IMPORTANT: Only the brokerage line below is actually deducted by the
- * server (services/orderService.js -> calcBrokerage, min(₹20, 0.03%)).
- * The statutory items (STT, exchange txn charges, GST, SEBI charges,
- * stamp duty) are shown for realism/estimation only, mirroring standard
- * Indian equity-broking charges, and are not wired into wallet debits
- * in this demo yet — flagged clearly at the bottom so it never reads
- * as a silent discrepancy with what the wallet is actually charged.
+ * As of the backend fee-calculation update, every line item shown
+ * below is actually deducted from the wallet at fill time (see
+ * services/orderService.js -> margin reservation, and
+ * services/executionEngine.js -> settlement), computed via the
+ * shared formula in utils/feeCalculator.js. This modal mirrors that
+ * formula exactly so the pre-trade estimate always matches what
+ * actually gets charged.
  *
  * Props:
  * @param {boolean}  visible
@@ -44,23 +45,24 @@ const fmt = (n) =>
 function computeCharges(orderValue, side, productType) {
   const value = orderValue > 0 ? orderValue : 0;
 
-  // Brokerage — mirrors services/orderService.js::calcBrokerage exactly.
+  // Brokerage — mirrors services/orderService.js::calcBrokerage exactly,
+  // including the ₹5 floor, verified against Groww's real behavior.
   // This is the only line item actually deducted from the wallet today.
-  const brokerage = Math.min(20, value * 0.0003);
+  const brokerage = value > 0 ? Math.max(5, Math.min(20, value * 0.001)) : 0;
 
   // STT — Delivery: 0.1% both legs. Intraday: 0.025% on the sell leg only.
   const stt =
     productType === "CNC"
       ? value * 0.001
       : side === "SELL"
-      ? value * 0.00025
-      : 0;
+        ? value * 0.00025
+        : 0;
 
   // Exchange transaction charges (NSE equity, approx.)
   const exchangeTxnCharge = value * 0.0000297;
 
   // SEBI turnover fee — ₹10 per crore
-  const sebiCharge = value * 0.0000010;
+  const sebiCharge = value * 0.000001;
 
   // Stamp duty — buyer-side only, 0.015% (capped at ₹1,500/crore), same rate for delivery & intraday
   const stampDuty = side === "BUY" ? value * 0.00015 : 0;
@@ -68,9 +70,18 @@ function computeCharges(orderValue, side, productType) {
   // GST — 18% on (brokerage + exchange transaction charges)
   const gst = (brokerage + exchangeTxnCharge) * 0.18;
 
-  const total = brokerage + stt + exchangeTxnCharge + sebiCharge + stampDuty + gst;
+  const total =
+    brokerage + stt + exchangeTxnCharge + sebiCharge + stampDuty + gst;
 
-  return { brokerage, stt, exchangeTxnCharge, sebiCharge, stampDuty, gst, total };
+  return {
+    brokerage,
+    stt,
+    exchangeTxnCharge,
+    sebiCharge,
+    stampDuty,
+    gst,
+    total,
+  };
 }
 
 const ChargesBreakdownModal = ({
@@ -80,9 +91,10 @@ const ChargesBreakdownModal = ({
   side = "BUY",
   productType = "CNC",
 }) => {
+  const insets = useSafeAreaInsets();
   const charges = useMemo(
     () => computeCharges(orderValue, side, productType),
-    [orderValue, side, productType]
+    [orderValue, side, productType],
   );
 
   const tradeTypeLabel = productType === "MIS" ? "Intraday" : "Delivery";
@@ -90,7 +102,7 @@ const ChargesBreakdownModal = ({
   const rows = [
     {
       label: "Stocksy Brokerage",
-      sub: "Lower of ₹20 or 0.03% of order value",
+      sub: "Lower of ₹20 or 0.1% of order value",
       value: charges.brokerage,
     },
     {
@@ -99,8 +111,8 @@ const ChargesBreakdownModal = ({
         productType === "CNC"
           ? "0.1% on buy & sell (Delivery)"
           : side === "SELL"
-          ? "0.025% on sell side (Intraday)"
-          : "Not charged on intraday buy",
+            ? "0.025% on sell side (Intraday)"
+            : "Not charged on intraday buy",
       value: charges.stt,
     },
     {
@@ -126,7 +138,12 @@ const ChargesBreakdownModal = ({
   ];
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.overlay}>
           <TouchableWithoutFeedback>
@@ -139,11 +156,19 @@ const ChargesBreakdownModal = ({
                 <View>
                   <Text style={styles.title}>Estimated Charges</Text>
                   <Text style={styles.subtitle}>
-                    {tradeTypeLabel} · {side === "BUY" ? "Buy" : "Sell"} · on order value of {fmt(orderValue)}
+                    {tradeTypeLabel} · {side === "BUY" ? "Buy" : "Sell"} · on
+                    order value of {fmt(orderValue)}
                   </Text>
                 </View>
-                <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <Ionicons name="close" size={22} color={Colors.textSecondary} />
+                <TouchableOpacity
+                  onPress={onClose}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons
+                    name="close"
+                    size={22}
+                    color={Colors.textSecondary}
+                  />
                 </TouchableOpacity>
               </View>
 
@@ -175,14 +200,18 @@ const ChargesBreakdownModal = ({
                     style={{ marginTop: 1 }}
                   />
                   <Text style={styles.noteText}>
-                    In this demo, only the Stocksy Brokerage line above is deducted from your
-                    wallet balance. The remaining charges are shown as a realistic estimate of
+                    In this demo, All of the above amount is deducted from your
+                    wallet balance. This are shown as a realistic estimate of
                     what a live broker would additionally charge on this order.
                   </Text>
                 </View>
               </ScrollView>
 
-              <TouchableOpacity style={styles.closeBtn} onPress={onClose} activeOpacity={0.85}>
+              <TouchableOpacity
+                style={styles.closeBtn}
+                onPress={onClose}
+                activeOpacity={0.85}
+              >
                 <Text style={styles.closeBtnText}>Got it</Text>
               </TouchableOpacity>
             </View>

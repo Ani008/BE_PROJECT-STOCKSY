@@ -14,7 +14,10 @@ import {
   StatusBar,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import CreateWalletModal from "../components/CreateWalletModal";
 import MarketClosedModal from "../components/MarketClosedModal";
 import ChargesBreakdownModal from "../components/ChargesBreakDownModel";
@@ -71,7 +74,11 @@ export default function BuyOrderScreen({ navigation, route }) {
   // ─── Market status ───────────────────────────────────────────────────────────
   // Optimistic isOpen:true until the first fetch resolves, so the screen
   // doesn't flash a false "closed" state while the request is in flight.
-  const [marketStatus, setMarketStatus] = useState({ isOpen: true, reason: null, nextOpen: null });
+  const [marketStatus, setMarketStatus] = useState({
+    isOpen: true,
+    reason: null,
+    nextOpen: null,
+  });
   const [marketModalVisible, setMarketModalVisible] = useState(false);
 
   // ─── Charges breakdown sheet ─────────────────────────────────────────────────
@@ -90,7 +97,9 @@ export default function BuyOrderScreen({ navigation, route }) {
         // screen on it — the server-side check in placeOrder() is still
         // the real gate; this is just the proactive heads-up.
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // ─── Leverage ────────────────────────────────────────────────────────────────
@@ -194,10 +203,13 @@ export default function BuyOrderScreen({ navigation, route }) {
 
   const selectedWallet = wallets.find((w) => w.id === selectedWalletId);
   const walletBalance = selectedWallet?.balance || 0;
-  const canAfford =
-    isLeveragedSide ? walletBalance >= marginRequired : true;
+  const canAfford = isLeveragedSide ? walletBalance >= marginRequired : true;
   const canPlace =
-    qtyNum > 0 && selectedWalletId && canAfford && marketStatus.isOpen && !placingOrder;
+    qtyNum > 0 &&
+    selectedWalletId &&
+    canAfford &&
+    marketStatus.isOpen &&
+    !placingOrder;
 
   // ─── Place order ─────────────────────────────────────────────────────────────
   async function handlePlaceOrder() {
@@ -239,7 +251,11 @@ export default function BuyOrderScreen({ navigation, route }) {
         // { reason, nextOpen } payload (handles the case where the
         // market closed in the gap between our status fetch and this
         // submit) and surface the same message box.
-        setMarketStatus({ isOpen: false, reason: data.reason, nextOpen: data.nextOpen });
+        setMarketStatus({
+          isOpen: false,
+          reason: data.reason,
+          nextOpen: data.nextOpen,
+        });
         setMarketModalVisible(true);
       }
       // Other errors (INSUFFICIENT_FUNDS, holdings, etc.) already covered
@@ -343,7 +359,8 @@ export default function BuyOrderScreen({ navigation, route }) {
         >
           <Ionicons name="time-outline" size={16} color={Colors.warning} />
           <Text style={styles.marketClosedBannerTxt} numberOfLines={1}>
-            Market closed — opens {marketStatus.nextOpen?.dateLabel || "next trading day"} at{" "}
+            Market closed — opens{" "}
+            {marketStatus.nextOpen?.dateLabel || "next trading day"} at{" "}
             {marketStatus.nextOpen?.timeLabel || "9:15 AM"}
           </Text>
         </TouchableOpacity>
@@ -391,7 +408,12 @@ export default function BuyOrderScreen({ navigation, route }) {
 
           {/* ── QTY + Price inputs ────────────────────────────────────────── */}
           <View style={styles.inputRow}>
-            <View style={[styles.inputGroup, { flex: 1, marginRight: moderateScale(10) }]}>
+            <View
+              style={[
+                styles.inputGroup,
+                { flex: 1, marginRight: moderateScale(10) },
+              ]}
+            >
               <Text style={styles.inputLabel}>QTY</Text>
               <TextInput
                 style={styles.input}
@@ -417,75 +439,6 @@ export default function BuyOrderScreen({ navigation, route }) {
                 />
               </View>
             )}
-          </View>
-
-          {/* ── Order summary ─────────────────────────────────────────────── */}
-          <View
-            style={[styles.summaryCard, { borderColor: accentColor + "40" }]}
-          >
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryKey}>Price per share</Text>
-                <Text style={styles.summaryVal}>
-                  ₹
-                  {effectivePrice.toLocaleString("en-IN", {
-                    minimumFractionDigits: 2,
-                  })}
-                </Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryKey}>Quantity</Text>
-                <Text style={styles.summaryVal}>{qtyNum}</Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryKey}>Order value</Text>
-                <Text style={styles.summaryVal}>
-                  ₹
-                  {orderTotal.toLocaleString("en-IN", {
-                    minimumFractionDigits: 2,
-                  })}
-                </Text>
-              </View>
-              {productType === "MIS" && (
-                <View style={styles.summaryRow}>
-                  <Text style={styles.summaryKey}>Leverage</Text>
-                  <View style={styles.leverageBadge}>
-                    <Text style={styles.leverageBadgeTxt}>
-                      {activeLeverage}x
-                    </Text>
-                  </View>
-                </View>
-              )}
-              <View style={[styles.summaryRow, styles.summaryTotal]}>
-                <Text
-                  style={[
-                    styles.summaryKey,
-                    { color: Colors.text, fontWeight: "700" },
-                  ]}
-                >
-                  {isLeveragedSide ? "Margin required" : "Estimated credit"}
-                </Text>
-                <Text
-                  style={[
-                    styles.summaryVal,
-                    { color: accentColor, fontWeight: "700", fontSize: fontScale(Typography.bodyLarge) },
-                  ]}
-                >
-                  ₹
-                  {(isLeveragedSide ? marginRequired : orderTotal).toLocaleString(
-                    "en-IN",
-                    { minimumFractionDigits: 2 },
-                  )}
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                onPress={() => setChargesModalVisible(true)}
-                activeOpacity={0.6}
-                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                style={styles.chargesLinkRow}
-              >
-                <Text style={styles.chargesLinkTxt}>View charges breakdown</Text>
-              </TouchableOpacity>
           </View>
 
           {/* ── Order mode (Market / Limit) ───────────────────────────────── */}
@@ -654,12 +607,90 @@ export default function BuyOrderScreen({ navigation, route }) {
             )}
           </View>
 
+          {/* ── Order summary ─────────────────────────────────────────────── */}
+          <View
+            style={[styles.summaryCard, { borderColor: accentColor + "40" }]}
+          >
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryKey}>Price per share</Text>
+              <Text style={styles.summaryVal}>
+                ₹
+                {effectivePrice.toLocaleString("en-IN", {
+                  minimumFractionDigits: 2,
+                })}
+              </Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryKey}>Quantity</Text>
+              <Text style={styles.summaryVal}>{qtyNum}</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryKey}>Order value</Text>
+              <Text style={styles.summaryVal}>
+                ₹
+                {orderTotal.toLocaleString("en-IN", {
+                  minimumFractionDigits: 2,
+                })}
+              </Text>
+            </View>
+            {productType === "MIS" && (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryKey}>Leverage</Text>
+                <View style={styles.leverageBadge}>
+                  <Text style={styles.leverageBadgeTxt}>{activeLeverage}x</Text>
+                </View>
+              </View>
+            )}
+            <View style={[styles.summaryRow, styles.summaryTotal]}>
+              <Text
+                style={[
+                  styles.summaryKey,
+                  { color: Colors.text, fontWeight: "700" },
+                ]}
+              >
+                {isLeveragedSide ? "Margin required" : "Estimated credit"}
+              </Text>
+              <Text
+                style={[
+                  styles.summaryVal,
+                  {
+                    color: accentColor,
+                    fontWeight: "700",
+                    fontSize: fontScale(Typography.bodyLarge),
+                  },
+                ]}
+              >
+                ₹
+                {(isLeveragedSide ? marginRequired : orderTotal).toLocaleString(
+                  "en-IN",
+                  { minimumFractionDigits: 2 },
+                )}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              onPress={() => setChargesModalVisible(true)}
+              activeOpacity={0.6}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              style={styles.chargesLinkRow}
+            >
+              <Text style={styles.chargesLinkTxt}>View charges breakdown</Text>
+            </TouchableOpacity>
+          </View>
+
           {/* Bottom spacer so button doesn't overlap */}
           <View style={{ height: 100 + insets.bottom }} />
         </ScrollView>
 
         {/* ── Place order CTA ────────────────────────────────────────────────── */}
-        <View style={[styles.ctaContainer, { paddingBottom: styles.ctaContainer.paddingBottom + insets.bottom }]}>
+        <View
+          style={[
+            styles.ctaContainer,
+            {
+              paddingBottom: styles.ctaContainer.paddingBottom + insets.bottom,
+            },
+          ]}
+        >
           <TouchableOpacity
             style={[
               styles.ctaBtn,
@@ -919,7 +950,11 @@ const styles = StyleSheet.create({
     marginTop: moderateScale(2),
   },
   summaryKey: { fontSize: fontScale(Typography.caption), color: "#777" },
-  summaryVal: { fontSize: fontScale(Typography.caption), color: Colors.text, fontWeight: "600" },
+  summaryVal: {
+    fontSize: fontScale(Typography.caption),
+    color: Colors.text,
+    fontWeight: "600",
+  },
   chargesLinkRow: {
     marginTop: moderateScale(10),
     alignSelf: "flex-start",
@@ -952,7 +987,11 @@ const styles = StyleSheet.create({
     borderColor: "#1E1E28",
     gap: moderateScale(8),
   },
-  noWalletTxt: { fontSize: fontScale(Typography.body), color: Colors.textMuted, fontWeight: "600" },
+  noWalletTxt: {
+    fontSize: fontScale(Typography.body),
+    color: Colors.textMuted,
+    fontWeight: "600",
+  },
   noWalletSub: {
     fontSize: fontScale(Typography.caption),
     color: "#555",
@@ -1018,8 +1057,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: moderateScale(4),
     marginTop: moderateScale(4),
   },
-  walletDetailTxt: { fontSize: fontScale(Typography.caption), color: Colors.textSecondary },
-  insufficientTxt: { fontSize: fontScale(Typography.small), color: Colors.danger, fontWeight: "600" },
+  walletDetailTxt: {
+    fontSize: fontScale(Typography.caption),
+    color: Colors.textSecondary,
+  },
+  insufficientTxt: {
+    fontSize: fontScale(Typography.small),
+    color: Colors.danger,
+    fontWeight: "600",
+  },
 
   // CTA
   ctaContainer: {

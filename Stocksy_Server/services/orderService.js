@@ -20,6 +20,7 @@ const {
 } = require('../utils/errors');
 
 const logger = require('../utils/logger');
+const { calculateCharges } = require('../utils/feeCalculator');
 
 // ─────────────────────────────────────────────────────────────
 // Constants
@@ -44,8 +45,9 @@ function applySlippage(ltp, side) {
 
 function calcBrokerage(tradeValue) {
   const flat = 20;
-  const pct = tradeValue * 0.0003;
-  return Math.min(flat, pct);
+  const floor = 5; // matches Groww's real floor exactly
+  const pct = tradeValue * 0.001; // 0.1% — matches Groww's published equity rate
+  return Math.max(floor, Math.min(flat, pct));
 }
 
 async function getLivePrice(instrumentKey) {
@@ -189,6 +191,12 @@ async function placeOrder(userId, walletId, payload) {
 
   const brokerage = calcBrokerage(estimatedValue);
 
+  // Reserve against the FULL realistic charge (brokerage + STT + exchange
+  // txn charge + SEBI charges + stamp duty + GST), not just brokerage —
+  // otherwise the balance check below can pass on funds that turn out to
+  // be insufficient once the real charges are deducted at fill time.
+  const totalCharges = calculateCharges(estimatedValue, side, product_type).totalCharges;
+
   // CNC = 1x always. MIS = 5x for Nifty 50, 2.5x for everything else.
   const leverage = getLeverage(symbol, product_type);
 
@@ -272,7 +280,7 @@ async function placeOrder(userId, walletId, payload) {
 
     const marginRequired =
       openQty > 0
-        ? (openQty * effectivePrice / leverage) + brokerage
+        ? (openQty * effectivePrice / leverage) + totalCharges
         : 0;
 
     // 6. Balance check — applies to BUY (opening/extending a long) and now
@@ -401,6 +409,7 @@ async function placeOrder(userId, walletId, payload) {
           ltp,
           effectivePrice,
           brokerage,
+          totalCharges,
           marginRequired
         })
       ]

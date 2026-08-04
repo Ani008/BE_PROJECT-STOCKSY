@@ -92,7 +92,9 @@ async function getRevenueLedger({ limit = 50, offset = 0, from, to } = {}) {
   const { rows } = await pool.query(
     `
     SELECT id, trade_id, order_id, user_id, wallet_id, instrument_key, symbol,
-           side, product_type, trade_value, brokerage_amount, earned_at
+           side, product_type, trade_value, brokerage_amount,
+           stt, exchange_txn_charge, sebi_charges, stamp_duty, gst, total_charges,
+           earned_at
     FROM platform_revenue
     ${whereClause}
     ORDER BY earned_at DESC
@@ -113,6 +115,12 @@ async function getRevenueLedger({ limit = 50, offset = 0, from, to } = {}) {
     productType: r.product_type,
     tradeValue: parseFloat(r.trade_value),
     brokerageAmount: parseFloat(r.brokerage_amount),
+    stt: parseFloat(r.stt),
+    exchangeTxnCharge: parseFloat(r.exchange_txn_charge),
+    sebiCharges: parseFloat(r.sebi_charges),
+    stampDuty: parseFloat(r.stamp_duty),
+    gst: parseFloat(r.gst),
+    totalCharges: parseFloat(r.total_charges),
     earnedAt: r.earned_at,
   }));
 }

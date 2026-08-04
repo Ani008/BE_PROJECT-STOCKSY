@@ -9,7 +9,10 @@ import {
   Modal,
   StatusBar,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { BarChart } from "react-native-gifted-charts";
 import { WebView } from "react-native-webview";
@@ -41,6 +44,7 @@ const calcChange = (ltp, cp) => {
 };
 
 const StockDetailPage = ({ navigation, route }) => {
+  const insets = useSafeAreaInsets();
   const {
     instrumentKey,
     symbol,
@@ -114,7 +118,8 @@ const StockDetailPage = ({ navigation, route }) => {
 
     label: item.period,
 
-    frontColor: index === selectedIndex ? Colors.primary : "rgba(59,130,246,0.25)",
+    frontColor:
+      index === selectedIndex ? Colors.primary : "rgba(59,130,246,0.25)",
 
     onPress: () => setSelectedIndex(index),
 
@@ -130,7 +135,8 @@ const StockDetailPage = ({ navigation, route }) => {
   const profitData = financialData.map((item, index) => ({
     value: item.profit,
 
-    frontColor: index === selectedIndex ? Colors.success : "rgba(16,185,129,0.25)",
+    frontColor:
+      index === selectedIndex ? Colors.success : "rgba(16,185,129,0.25)",
 
     onPress: () => setSelectedIndex(index),
   }));
@@ -143,7 +149,11 @@ const StockDetailPage = ({ navigation, route }) => {
           onPress={() => navigation.goBack()}
           style={styles.backBtn}
         >
-          <Ionicons name="arrow-back" size={moderateScale(20)} color={Colors.text} />
+          <Ionicons
+            name="arrow-back"
+            size={moderateScale(20)}
+            color={Colors.text}
+          />
         </TouchableOpacity>
 
         <Text
@@ -160,7 +170,11 @@ const StockDetailPage = ({ navigation, route }) => {
           onPress={() => setAlertModalVisible(true)}
           style={styles.alertBtn}
         >
-          <Ionicons name="notifications-outline" size={moderateScale(20)} color={Colors.text} />
+          <Ionicons
+            name="notifications-outline"
+            size={moderateScale(20)}
+            color={Colors.text}
+          />
         </TouchableOpacity>
       </View>
 
@@ -185,8 +199,12 @@ const StockDetailPage = ({ navigation, route }) => {
             )}
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.companyName} numberOfLines={1}>{name}</Text>
-            <Text style={styles.sectorLabel} numberOfLines={1}>{sector} · NSE</Text>
+            <Text style={styles.companyName} numberOfLines={1}>
+              {name}
+            </Text>
+            <Text style={styles.sectorLabel} numberOfLines={1}>
+              {sector} · NSE
+            </Text>
           </View>
         </View>
 
@@ -244,7 +262,11 @@ const StockDetailPage = ({ navigation, route }) => {
               onPress={() => setChartExpanded(true)}
               activeOpacity={0.8}
             >
-              <Ionicons name="expand-outline" size={moderateScale(15)} color={Colors.textSecondary} />
+              <Ionicons
+                name="expand-outline"
+                size={moderateScale(15)}
+                color={Colors.textSecondary}
+              />
             </TouchableOpacity>
           </View>
         </View>
@@ -341,10 +363,14 @@ const StockDetailPage = ({ navigation, route }) => {
             />
           </TouchableOpacity>
           {showFundamentals && fundamentalsLoading && (
-            <Text style={{ marginTop: moderateScale(12) }}>Loading fundamentals...</Text>
+            <Text style={{ marginTop: moderateScale(12) }}>
+              Loading fundamentals...
+            </Text>
           )}
           {showFundamentals && error && (
-            <Text style={{ color: "red", marginTop: moderateScale(12) }}>{error}</Text>
+            <Text style={{ color: "red", marginTop: moderateScale(12) }}>
+              {error}
+            </Text>
           )}
           {showFundamentals &&
             !fundamentalsLoading &&
@@ -435,7 +461,9 @@ const StockDetailPage = ({ navigation, route }) => {
               <View>
                 <Text style={styles.financialStatLabel}>PROFIT (CR)</Text>
 
-                <Text style={[styles.financialStatValue, { color: Colors.success }]}>
+                <Text
+                  style={[styles.financialStatValue, { color: Colors.success }]}
+                >
                   ₹
                   {selectedData?.profit != null
                     ? Number(selectedData.profit).toLocaleString("en-IN")
@@ -602,7 +630,12 @@ const StockDetailPage = ({ navigation, route }) => {
       </ScrollView>
 
       {/* ── Action bar ──────────────────────────────────────────────────────── */}
-      <View style={styles.actionBar}>
+      <View
+        style={[
+          styles.actionBar,
+          { paddingBottom: moderateScale(12) + insets.bottom },
+        ]}
+      >
         <TouchableOpacity
           style={styles.sellBtn}
           onPress={() => {
@@ -735,9 +768,21 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   logo: { width: 36, height: 36, borderRadius: 8 },
-  logoFallback: { fontSize: fontScale(Typography.body), fontWeight: "700", color: Colors.primary },
-  companyName: { fontSize: fontScale(Typography.body), fontWeight: "600", color: Colors.text },
-  sectorLabel: { fontSize: fontScale(Typography.small), color: Colors.textMuted, marginTop: moderateScale(2) },
+  logoFallback: {
+    fontSize: fontScale(Typography.body),
+    fontWeight: "700",
+    color: Colors.primary,
+  },
+  companyName: {
+    fontSize: fontScale(Typography.body),
+    fontWeight: "600",
+    color: Colors.text,
+  },
+  sectorLabel: {
+    fontSize: fontScale(Typography.small),
+    color: Colors.textMuted,
+    marginTop: moderateScale(2),
+  },
 
   // Price
   priceRow: {
@@ -880,8 +925,15 @@ const styles = StyleSheet.create({
     paddingVertical: moderateScale(11),
   },
   divider: { height: 1, backgroundColor: Colors.background },
-  aboutLabel: { fontSize: fontScale(Typography.caption), color: Colors.textMuted },
-  aboutValue: { fontSize: fontScale(Typography.caption), fontWeight: "600", color: Colors.text },
+  aboutLabel: {
+    fontSize: fontScale(Typography.caption),
+    color: Colors.textMuted,
+  },
+  aboutValue: {
+    fontSize: fontScale(Typography.caption),
+    fontWeight: "600",
+    color: Colors.text,
+  },
 
   // Credit
   credit: {
@@ -900,7 +952,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     paddingHorizontal: moderateScale(16),
     paddingTop: moderateScale(12),
-    paddingBottom: moderateScale(28),
+    // paddingBottom removed from here — now applied dynamically above
     backgroundColor: Colors.white,
     borderTopWidth: 1,
     borderTopColor: Colors.divider,
@@ -1263,7 +1315,11 @@ const TradingViewModal = ({
             onPress={onClose}
             activeOpacity={0.75}
           >
-            <Ionicons name="close" size={moderateScale(18)} color={Colors.textMuted} />
+            <Ionicons
+              name="close"
+              size={moderateScale(18)}
+              color={Colors.textMuted}
+            />
           </TouchableOpacity>
         </View>
 
