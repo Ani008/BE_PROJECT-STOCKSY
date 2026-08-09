@@ -20,10 +20,11 @@ import {
 } from "react-native-safe-area-context";
 import CreateWalletModal from "../components/CreateWalletModal";
 import MarketClosedModal from "../components/MarketClosedModal";
-import ChargesBreakdownModal, { computeCharges } from "../components/ChargesBreakDownModel";
+import ChargesBreakdownModal from "../components/ChargesBreakDownModel";
 import { walletService } from "../../services/walletService";
 import { fetchWallets, createWallet } from "../../services/walletService";
 import { placeOrder } from "../../services/orderService";
+import { showToast } from "../../services/uiBridge";
 import { fetchLeverage } from "../../services/leverageService";
 import { fetchMarketStatus } from "../../services/marketService";
 import useMarketData from "../hooks/useMarketData";
@@ -199,18 +200,7 @@ export default function BuyOrderScreen({ navigation, route }) {
   // only side that's still margin-free, since CNC can never open a short
   // — it only ever closes an existing delivery holding.
   const isLeveragedSide = orderType === "BUY" || productType === "MIS";
-
-  // Mirrors orderService.js's real marginRequired formula exactly:
-  // (openQty * effectivePrice / leverage) + totalCharges. Previously this
-  // only did the leverage division and never added charges, so the
-  // on-screen estimate (and the canAfford check below, which uses this
-  // same value) understated what the wallet will actually need — the
-  // backend was always right, this was purely a frontend display/
-  // affordability-check gap.
-  const estimatedCharges = computeCharges(orderTotal, orderType, productType);
-  const marginRequired = isLeveragedSide
-    ? orderTotal / activeLeverage + estimatedCharges.total
-    : 0;
+  const marginRequired = isLeveragedSide ? orderTotal / activeLeverage : 0;
 
   const selectedWallet = wallets.find((w) => w.id === selectedWalletId);
   const walletBalance = selectedWallet?.balance || 0;
@@ -229,6 +219,13 @@ export default function BuyOrderScreen({ navigation, route }) {
       // tapping a disabled-looking button) — re-show the message box
       // instead of letting the request go out at all.
       setMarketModalVisible(true);
+      return;
+    }
+    if (wallets.length === 0) {
+      // Button stays tappable in this case (see disabled prop below) —
+      // this is the actual feedback path, not a silent no-op.
+      showToast("Create a wallet first to start trading", "error");
+      setModalVisible(true);
       return;
     }
     if (!canPlace) return;
@@ -714,7 +711,7 @@ export default function BuyOrderScreen({ navigation, route }) {
               },
             ]}
             onPress={handlePlaceOrder}
-            disabled={marketStatus.isOpen && !canPlace}
+            disabled={marketStatus.isOpen && !canPlace && wallets.length > 0}
             activeOpacity={0.85}
           >
             {placingOrder ? (
@@ -992,20 +989,20 @@ const styles = StyleSheet.create({
   noWalletBox: {
     alignItems: "center",
     padding: moderateScale(24),
-    backgroundColor: "#14141C",
+    backgroundColor: Colors.surfaceAlt,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#1E1E28",
+    borderColor: Colors.border,
     gap: moderateScale(8),
   },
   noWalletTxt: {
     fontSize: fontScale(Typography.body),
-    color: Colors.textMuted,
+    color: Colors.text,
     fontWeight: "600",
   },
   noWalletSub: {
     fontSize: fontScale(Typography.caption),
-    color: "#555",
+    color: Colors.textSecondary,
     textAlign: "center",
     lineHeight: 18,
   },

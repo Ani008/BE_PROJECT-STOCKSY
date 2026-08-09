@@ -20,7 +20,7 @@ import usePrivacyConsent from "../hooks/usePrivacyConsent";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { API_BASE_URL, WEB_CLIENT_ID } from "../config/env";
-//import { GoogleSignin } from "@react-native-google-signin/google-signin";
+import { GoogleSignin } from "@react-native-google-signin/google-signin";
 
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
@@ -33,8 +33,7 @@ const SignupPage = ({ navigation }) => {
 
   const { hasAccepted, loading: consentLoading, markAccepted } = usePrivacyConsent();
   const [consentModalVisible, setConsentModalVisible] = useState(false);
-  // Remembers which signup method was tapped so, once the user accepts the
-  // policy in the modal, we resume that exact action automatically.
+  
   const [pendingAction, setPendingAction] = useState(null); // 'email' | 'google'
 
   const isExpoGo = Constants.executionEnvironment === "storeClient";
@@ -101,9 +100,12 @@ const SignupPage = ({ navigation }) => {
 
       const userInfo = await GoogleSignin.signIn();
 
-      const tokens = await GoogleSignin.getTokens();
+      const idToken = userInfo?.data?.idToken;
 
-      const idToken = tokens.idToken;
+      if (!idToken) {
+        Alert.alert("Google Signup Failed", "No ID token returned by Google.");
+        return;
+      }
 
       const res = await fetch(`${API_BASE_URL}/auth/google`, {
         method: "POST",

@@ -18,7 +18,7 @@ import authService from "../../services/authService";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { API_BASE_URL, WEB_CLIENT_ID } from "../config/env";
-//import { GoogleSignin } from "@react-native-google-signin/google-signin";
+import { GoogleSignin } from "@react-native-google-signin/google-signin";
 
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
@@ -98,9 +98,12 @@ const LoginPage = ({ navigation }) => {
 
       console.log(JSON.stringify(userInfo, null, 2));
 
-      const tokens = await GoogleSignin.getTokens();
+      const idToken = userInfo?.data?.idToken;
 
-      const idToken = tokens.idToken;
+      if (!idToken) {
+        Alert.alert("Google Login Failed", "No ID token returned by Google.");
+        return;
+      }
 
       const res = await fetch(`${API_BASE_URL}/auth/google`, {
         method: "POST",

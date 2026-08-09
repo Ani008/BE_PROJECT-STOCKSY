@@ -21,6 +21,28 @@ const clearToken = async () => {
   await AsyncStorage.removeItem(TOKEN_KEY);
 };
 
+// Google login/signup hit a separate backend route (/auth/google) and
+// were, until now, persisting their session with SecureStore instead of
+// AsyncStorage — a different storage backend than the one getStoredToken()
+// (and api.js's request interceptor) actually reads from. That meant a
+// Google session looked successful for one screen, then silently failed
+// auth on the very next API call / app relaunch. This helper makes Google
+// auth persist through the exact same path as email/password auth.
+export const persistGoogleSession = async (data) => {
+  await storeToken(data.token);
+
+  await AsyncStorage.setItem(
+    "user",
+    JSON.stringify({
+      id: data.id,
+      username: data.username,
+      fullName: data.fullName,
+      email: data.email,
+      avatar: data.avatar,
+    }),
+  );
+};
+
 // ─── Auth calls ───────────────────────────────────────────────────────────────
 
 const signup = async ({ fullName, email, password }) => {
@@ -93,5 +115,5 @@ export const deleteAccount = async (password) => {
 // LoginPage.js  → import authService from '...'  → authService.login(...)
 // App.js        → import { getStoredToken } from '...'  → getStoredToken()
 
-const authService = { signup, login, logout, getStoredToken, deleteAccount };
+const authService = { signup, login, logout, getStoredToken, deleteAccount, persistGoogleSession };
 export default authService;
