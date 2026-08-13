@@ -38,6 +38,7 @@ import OrderSuccessScreen from "./src/pages/OrderSuccessScreen";
 
 import StockDetailPage from "./src/pages/StockDetailPage";
 import OrderHistoryPage from "./src/pages/OrderHistoryPage";
+import JournalScreen from "./src/pages/JournalScreen";
 import AlertsPage from "./src/pages/AlertsPage";
 
 // ─── Tab screens ──────────────────────────────────────────────────────────────
@@ -212,6 +213,7 @@ export default function App() {
           <Stack.Screen name="Wallet" component={WalletScreen} />
           <Stack.Screen name="AllTransactions" component={AllTransactionsPage} />
           <Stack.Screen name="OrderHistory" component={OrderHistoryPage} />
+          <Stack.Screen name="Journal" component={JournalScreen} />
           <Stack.Screen name="Alerts" component={AlertsPage} />
 
           <Stack.Screen name="Search" component={SearchPage} />

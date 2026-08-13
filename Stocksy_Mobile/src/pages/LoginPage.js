@@ -18,7 +18,7 @@ import authService from "../../services/authService";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { API_BASE_URL, WEB_CLIENT_ID } from "../config/env";
-import { GoogleSignin } from "@react-native-google-signin/google-signin";
+//import { GoogleSignin } from "@react-native-google-signin/google-signin";
 
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 

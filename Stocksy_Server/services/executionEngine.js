@@ -30,6 +30,11 @@ const { getLeverage } = require("../config/leverage");
 
 const logger = require("../utils/logger");
 
+// Trade Journal feature — indicator snapshot capture + post-fill journal
+// entry generation on full position close. Both are best-effort and never
+// throw, so they can't affect order execution.
+const { getIndicatorSnapshot, maybeGenerateJournalEntry } = require("./journalService");
+
 // ─────────────────────────────────────────────────────────────
 // Execute Order
 // ─────────────────────────────────────────────────────────────
@@ -242,6 +247,11 @@ async function executeOrder(jobData) {
     // extending a long) or a credit (covering a short).
     let isDebit = null;
 
+    // Trade Journal — set inside whichever branch below fully closes a
+    // position (long or short round trip). Read after COMMIT to decide
+    // whether to generate a journal entry for this fill.
+    let closedRoundTrip = null;
+
     // ─────────────────────────────────────────────────────────
     // BUY
     // ─────────────────────────────────────────────────────────
@@ -302,6 +312,11 @@ async function executeOrder(jobData) {
         isDebit = false; // covering a short releases margin + P&L → credit
 
         const newQty = existingQty + qty; // moves toward 0 from below
+
+        // Fully covered a short → round trip complete (entry side was SELL).
+        if (newQty >= 0) {
+          closedRoundTrip = { positionId: existingPos.id, side: "SELL" };
+        }
 
         await client.query(
           `
@@ -506,6 +521,11 @@ async function executeOrder(jobData) {
 
         const newQty = existingQty - qty;
 
+        // Fully closed a long → round trip complete (entry side was BUY).
+        if (newQty <= 0) {
+          closedRoundTrip = { positionId: pos.id, side: "BUY" };
+        }
+
         if (newQty <= 0) {
           await client.query(
             `
@@ -642,6 +662,15 @@ async function executeOrder(jobData) {
     }
 
     // ─────────────────────────────────────────────────────────
+    // 6b. Trade Journal — indicator snapshot
+    // ─────────────────────────────────────────────────────────
+    // Captured live, right at fill time — never recomputed later. This is
+    // a Redis read, not a DB call, so it's cheap enough to sit inside the
+    // transaction; a miss (null) just means this trade has no snapshot,
+    // it never blocks or fails the fill.
+    const indicatorSnapshot = await getIndicatorSnapshot(instrumentKey);
+
+    // ─────────────────────────────────────────────────────────
     // 7. Trade Record
     // ─────────────────────────────────────────────────────────
 
@@ -664,15 +693,16 @@ async function executeOrder(jobData) {
         total_charges,
         total_value,
         realised_pnl,
+        indicator_snapshot,
         executed_at
       )
       VALUES
       (
         $1,$2,$3,$4,$5,$6,
         $7,$8,$9,$10,$11,$12,
-        $13,NOW()
+        $13,$14,NOW()
       )
-      RETURNING id
+      RETURNING id, executed_at
       `,
       [
         orderId,
@@ -688,6 +718,7 @@ async function executeOrder(jobData) {
         totalCharges,
         tradeValue,
         side === "SELL" ? realisedPnl : null,
+        indicatorSnapshot ? JSON.stringify(indicatorSnapshot) : null,
       ],
     );
 
@@ -843,6 +874,29 @@ async function executeOrder(jobData) {
     // Transaction is durably committed now — safe to drop the stale
     // cached feed so the next read picks up this new stock_buy/stock_sell row.
     await invalidateTransactionsCache(userId);
+
+    // ─────────────────────────────────────────────────────────
+    // 9b. Trade Journal — generate entry if this fill fully closed a
+    // position. Runs after COMMIT, best-effort, never throws — a bug
+    // here must never look like a failed order to the user.
+    // ─────────────────────────────────────────────────────────
+    if (closedRoundTrip) {
+      maybeGenerateJournalEntry({
+        userId,
+        walletId,
+        positionId: closedRoundTrip.positionId,
+        instrumentKey,
+        symbol,
+        exitTradeId: insertedTrade.id,
+        side: closedRoundTrip.side,
+        exitPrice: fillPrice,
+        quantity: qty,
+        realisedPnl,
+        exitAt: insertedTrade.executed_at,
+      }).catch((e) =>
+        logger.error(`[journal] post-fill generation error: ${e.message}`),
+      );
+    }
 
     // ─────────────────────────────────────────────────────────
     // 10. Redis Cache

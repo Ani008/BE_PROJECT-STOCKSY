@@ -308,7 +308,13 @@ export default function PortfolioPage({ navigation }) {
 
       {/* ── Header ── */}
       <View style={[styles.header, { paddingTop: insets.top + moderateScale(8) }]}>
-        <View style={{ width: moderateScale(36) }} />
+        <TouchableOpacity
+          style={styles.journalBtn}
+          onPress={() => navigation.navigate('Journal')}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="bulb-outline" size={moderateScale(20)} color={Colors.white} />
+        </TouchableOpacity>
         <Text style={styles.headerTitle}>Portfolio</Text>
         <TouchableOpacity
           style={styles.addBtn}
@@ -551,6 +557,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   addBtn: {
+    width: moderateScale(36), height: moderateScale(36), borderRadius: moderateScale(18),
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  journalBtn: {
     width: moderateScale(36), height: moderateScale(36), borderRadius: moderateScale(18),
     backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center', justifyContent: 'center',
