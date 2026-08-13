@@ -135,6 +135,48 @@ function validateOrderInput({
       'trigger_price required for SL orders'
     );
   }
+
+  // For SL (not SL_M), the limit price and trigger price must define a
+  // non-empty fill range, or the order could NEVER fill:
+  // BUY  canFill = ltp >= trigger && ltp <= price  → needs price >= trigger
+  // SELL canFill = ltp <= trigger && ltp >= price  → needs price <= trigger
+  if (order_type === 'SL' && price != null && trigger_price != null) {
+    if (side === 'BUY' && price < trigger_price) {
+      throw new ValidationError(
+        'For a BUY SL order, limit price must be >= trigger price'
+      );
+    }
+    if (side === 'SELL' && price > trigger_price) {
+      throw new ValidationError(
+        'For a SELL SL order, limit price must be <= trigger price'
+      );
+    }
+  }
+}
+
+// Real-broker SL semantics (matches Zerodha/Groww validation):
+//   BUY SL/SL_M  → used to buy on a breakout / cover a short → trigger
+//                  price must be ABOVE the current market price.
+//   SELL SL/SL_M → used to protect a long / short on a breakdown →
+//                  trigger price must be BELOW the current market price.
+// A trigger price on the wrong side of LTP would fill instantly (defeats
+// the purpose of a stop) or never fill at all — reject it up front rather
+// than silently accepting a broken order that sits OPEN forever or fires
+// immediately like a MARKET order in disguise.
+function validateTriggerDirection(order_type, side, trigger_price, ltp) {
+  if (!['SL', 'SL_M'].includes(order_type) || !ltp) return;
+
+  if (side === 'BUY' && trigger_price <= ltp) {
+    throw new ValidationError(
+      `Trigger price (₹${trigger_price}) must be above the current price (₹${ltp}) for a BUY ${order_type} order`
+    );
+  }
+
+  if (side === 'SELL' && trigger_price >= ltp) {
+    throw new ValidationError(
+      `Trigger price (₹${trigger_price}) must be below the current price (₹${ltp}) for a SELL ${order_type} order`
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -176,6 +218,13 @@ async function placeOrder(userId, walletId, payload) {
 
   // 3. Get live market price
   const ltp = await getLivePrice(instrument_key);
+
+  // 3b. SL/SL_M trigger price must sit on the correct side of the current
+  // price — see validateTriggerDirection for why. Only checked when we
+  // actually have a live price to check against; if Redis has no LTP yet
+  // getLivePrice() already returns null and the order gets rejected a few
+  // lines below by the "Could not determine live price" check instead.
+  validateTriggerDirection(order_type, side, trigger_price, ltp);
 
   const estimatedPrice =
     order_type === 'MARKET'
@@ -245,7 +294,7 @@ async function placeOrder(userId, walletId, payload) {
     // SELL still requires full existing holdings.
     const posRes = await client.query(
       `
-      SELECT quantity
+      SELECT id, quantity
       FROM positions
       WHERE wallet_id = $1
       AND instrument_key = $2
@@ -258,6 +307,25 @@ async function placeOrder(userId, walletId, payload) {
     const existingQty = posRes.rows.length
       ? parseFloat(posRes.rows[0].quantity)
       : 0;
+
+    // Link resting orders (SL/SL_M/LIMIT) to the position they're closing,
+    // so executionEngine can auto-cancel this order if that position gets
+    // closed some other way first (manual exit, RMS force-close, 3:20pm
+    // square-off) — see migration 012 for the full reasoning. Only linked
+    // when this order is actually on the CLOSING side of an existing
+    // position (long + SELL, or short + BUY); an order that opens a fresh
+    // position has no position row yet to link to.
+    let linkedPositionId = null;
+    if (
+      ['SL', 'SL_M', 'LIMIT'].includes(order_type) &&
+      posRes.rows.length &&
+      (
+        (existingQty > 0 && side === 'SELL') ||
+        (existingQty < 0 && side === 'BUY')
+      )
+    ) {
+      linkedPositionId = posRes.rows[0].id;
+    }
 
     // openQty = the portion of this order NOT offset by an opposite
     // existing position — i.e. the part that opens or extends a position
@@ -363,13 +431,14 @@ async function placeOrder(userId, walletId, payload) {
         margin_used,
         product_type,
         leverage_applied,
-        metadata
+        metadata,
+        position_id
       )
       VALUES
       (
         $1,$2,$3,$4,$5,
         $6,$7,$8,$9,$10,
-        'PENDING',$11,$12,$13,$14
+        'PENDING',$11,$12,$13,$14,$15
       )
       RETURNING *
       `,
@@ -387,7 +456,8 @@ async function placeOrder(userId, walletId, payload) {
         marginRequired,
         product_type,
         leverage,
-        JSON.stringify(metadata)
+        JSON.stringify(metadata),
+        linkedPositionId
       ]
     );
 

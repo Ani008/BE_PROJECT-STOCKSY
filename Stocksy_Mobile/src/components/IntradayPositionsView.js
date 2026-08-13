@@ -8,6 +8,10 @@ import {
   RefreshControl,
   Alert,
   ActivityIndicator,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { placeOrder } from "../../services/orderService";
@@ -49,7 +53,7 @@ function fmtPct(n) {
 }
 
 // ─── Reusable: PositionRow ────────────────────────────────────────────────────
-function PositionRow({ position, onPress }) {
+function PositionRow({ position, onPress, onSetStopLoss }) {
   const isPos = position.unrealisedPnl >= 0;
   const isShort = position.isShort ?? position.qty < 0;
   return (
@@ -68,6 +72,16 @@ function PositionRow({ position, onPress }) {
               <Text style={[styles.tagText, styles.shortTagText]}>Short</Text>
             </View>
           )}
+          {position.hasStopLoss && (
+            // NOTE: hasStopLoss isn't populated yet — wire it up by passing
+            // this component the open orders list (GET /api/orders?status=OPEN)
+            // and matching on wallet_id + instrument_key + product_type +
+            // order_type IN ('SL','SL_M'). Left as a no-op badge for now so
+            // the UI is ready the moment that data is threaded through.
+            <View style={[styles.tag, styles.slTag]}>
+              <Text style={[styles.tagText, styles.slTagText]}>SL set</Text>
+            </View>
+          )}
         </View>
         <Text style={styles.symbol}>{position.symbol}</Text>
         <Text style={styles.avg}>
@@ -83,8 +97,152 @@ function PositionRow({ position, onPress }) {
         <Text style={styles.mkt}>
           Mkt {position.ltp != null ? fmt(position.ltp) : "—"}
         </Text>
+        <TouchableOpacity
+          style={styles.slBtn}
+          activeOpacity={0.7}
+          onPress={(e) => {
+            e.stopPropagation?.();
+            onSetStopLoss?.(position);
+          }}
+        >
+          <Ionicons name="shield-half-outline" size={12} color={L.blue} />
+          <Text style={styles.slBtnText}>
+            {position.hasStopLoss ? "Edit SL" : "Set SL"}
+          </Text>
+        </TouchableOpacity>
       </View>
     </TouchableOpacity>
+  );
+}
+
+// ─── Set Stop Loss modal ────────────────────────────────────────────────────
+// Places a resting SL_M (stop-loss market) order on the OPPOSITE side of the
+// position, for the full open quantity — same order_type/side/product_type
+// contract orderService.placeOrder already validates and links to this
+// position (see migration 011). SL_M rather than SL: one fewer input to get
+// wrong (no limit price), and it always fills once triggered instead of
+// risking a missed fill in a fast-moving/gappy print.
+function SetStopLossModal({ position, visible, onClose, onPlaced }) {
+  const [trigger, setTrigger] = useState("");
+  const [placing, setPlacing] = useState(false);
+
+  if (!position) return null;
+
+  const isShort = position.isShort ?? position.qty < 0;
+  // Closing side is always the opposite of how the position is held.
+  const closingSide = isShort ? "BUY" : "SELL";
+  const ltp = position.ltp;
+
+  const handleClose = () => {
+    if (placing) return;
+    setTrigger("");
+    onClose?.();
+  };
+
+  const handleSubmit = async () => {
+    const triggerNum = parseFloat(trigger);
+
+    if (!triggerNum || triggerNum <= 0) {
+      Alert.alert("Enter a trigger price", "Trigger price must be a positive number.");
+      return;
+    }
+
+    // Mirror the backend's own directional check (services/orderService.js
+    // validateTriggerDirection) here too, so the person gets an inline
+    // error instead of a round-trip rejection.
+    if (ltp != null) {
+      if (closingSide === "SELL" && triggerNum >= ltp) {
+        Alert.alert(
+          "Invalid trigger price",
+          `For a long position, the stop-loss trigger must be BELOW the current price (₹${fmt(ltp)}).`,
+        );
+        return;
+      }
+      if (closingSide === "BUY" && triggerNum <= ltp) {
+        Alert.alert(
+          "Invalid trigger price",
+          `For a short position, the stop-loss trigger must be ABOVE the current price (₹${fmt(ltp)}).`,
+        );
+        return;
+      }
+    }
+
+    setPlacing(true);
+    try {
+      await placeOrder({
+        wallet_id: position.wallet_id,
+        instrument_key: position.instrument_key,
+        symbol: position.symbol,
+        name: position.name,
+        order_type: "SL_M",
+        side: closingSide,
+        quantity: Math.abs(position.qty),
+        trigger_price: triggerNum,
+        product_type: position.product_type,
+        metadata: { reason: "MANUAL_STOP_LOSS" },
+      });
+
+      setTrigger("");
+      onPlaced?.();
+    } catch (err) {
+      Alert.alert(
+        "Couldn't place stop-loss",
+        err?.response?.data?.message || err?.message || "Something went wrong.",
+      );
+    } finally {
+      setPlacing(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={styles.modalBackdrop}
+      >
+        <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>Set stop-loss · {position.symbol}</Text>
+          <Text style={styles.modalSub}>
+            {closingSide === "SELL"
+              ? `Auto-sell ${Math.abs(position.qty)} qty if price falls to your trigger.`
+              : `Auto-buy to cover ${Math.abs(position.qty)} qty if price rises to your trigger.`}
+          </Text>
+
+          <View style={styles.modalLtpRow}>
+            <Text style={styles.modalLtpLabel}>Current price</Text>
+            <Text style={styles.modalLtpValue}>{ltp != null ? fmt(ltp) : "—"}</Text>
+          </View>
+
+          <Text style={styles.inputLabel}>TRIGGER PRICE (₹)</Text>
+          <TextInput
+            style={styles.modalInput}
+            value={trigger}
+            onChangeText={setTrigger}
+            placeholder={closingSide === "SELL" ? "e.g. below current price" : "e.g. above current price"}
+            placeholderTextColor={L.textTer}
+            keyboardType="decimal-pad"
+            editable={!placing}
+          />
+
+          <View style={styles.modalBtnRow}>
+            <TouchableOpacity style={styles.modalCancelBtn} onPress={handleClose} disabled={placing}>
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modalSubmitBtn, placing && { opacity: 0.6 }]}
+              onPress={handleSubmit}
+              disabled={placing}
+            >
+              {placing ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.modalSubmitText}>Place stop-loss</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 
@@ -115,6 +273,7 @@ export default function IntradayPositionsView({
   onPressPosition,
 }) {
   const [exiting, setExiting] = useState(false);
+  const [slPosition, setSlPosition] = useState(null); // position currently in the "Set SL" modal
   const hasPositions = positions.length > 0;
   const totalReturns = totals?.totalUnrealised ?? 0;
   const isPos = totalReturns >= 0;
@@ -240,6 +399,7 @@ export default function IntradayPositionsView({
                 key={`${pos.wallet_id}:${pos.instrument_key}:${pos.product_type}`}
                 position={pos}
                 onPress={() => onPressPosition?.(pos)}
+                onSetStopLoss={setSlPosition}
               />
             ))}
           </View>
@@ -256,6 +416,21 @@ export default function IntradayPositionsView({
 
         <View style={{ height: 32 }} />
       </ScrollView>
+
+      <SetStopLossModal
+        position={slPosition}
+        visible={!!slPosition}
+        onClose={() => setSlPosition(null)}
+        onPlaced={() => {
+          const symbol = slPosition?.symbol;
+          setSlPosition(null);
+          onExited?.(); // reuse the same "refresh portfolio" callback the parent already wires up
+          Alert.alert(
+            "Stop-loss placed",
+            `We'll watch ${symbol} and auto-close this position if it hits your trigger price.`,
+          );
+        }}
+      />
     </View>
   );
 }
@@ -363,6 +538,12 @@ const styles = StyleSheet.create({
   shortTagText: {
     color: L.red,
   },
+  slTag: {
+    backgroundColor: L.greenTint,
+  },
+  slTagText: {
+    color: L.green,
+  },
   symbol: {
     fontSize: 15,
     fontWeight: "700",
@@ -384,6 +565,22 @@ const styles = StyleSheet.create({
   mkt: {
     fontSize: 12,
     color: L.textSec,
+    marginBottom: 6,
+  },
+  slBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: L.blue,
+  },
+  slBtnText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: L.blue,
   },
 
   emptyWrap: {
@@ -402,5 +599,95 @@ const styles = StyleSheet.create({
     color: L.textSec,
     textAlign: "center",
     lineHeight: 17,
+  },
+
+  // ── Set Stop Loss modal ──────────────────────────────────────────────────
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15,23,42,0.5)",
+    justifyContent: "center",
+    padding: 24,
+  },
+  modalCard: {
+    backgroundColor: L.card,
+    borderRadius: 18,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: L.textPri,
+    marginBottom: 4,
+  },
+  modalSub: {
+    fontSize: 12,
+    color: L.textSec,
+    lineHeight: 17,
+    marginBottom: 14,
+  },
+  modalLtpRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: L.bg,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 14,
+  },
+  modalLtpLabel: {
+    fontSize: 12,
+    color: L.textSec,
+  },
+  modalLtpValue: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: L.textPri,
+  },
+  inputLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    color: L.textTer,
+    marginBottom: 6,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: L.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: L.textPri,
+    marginBottom: 18,
+  },
+  modalBtnRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: L.border,
+  },
+  modalCancelText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: L.textSec,
+  },
+  modalSubmitBtn: {
+    flex: 1.4,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
+    backgroundColor: L.blue,
+  },
+  modalSubmitText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#fff",
   },
 });

@@ -13,6 +13,11 @@
  * sell: same brokerage calc, same wallet crediting, same trade
  * record, same NO_LTP retry safety net in the worker queue.
  *
+ * Also runs the DAY-order expiry sweep (see cancelStaleRestingOrders
+ * below) in the same cron tick — any resting SL/SL_M/LIMIT order that
+ * never triggered today gets cancelled here, CNC and MIS alike, same as
+ * a real exchange does at close.
+ *
  * KNOWN LIMITATION: this does not check the NSE/BSE trading holiday
  * calendar. On a holiday the cron will still fire, but since no MIS
  * positions could have been opened that day either, this should be
@@ -22,7 +27,7 @@
 
 const cron = require("node-cron");
 const { pool } = require("../config/postgres");
-const { placeOrder } = require("./orderService");
+const { placeOrder, cancelOrder } = require("./orderService");
 const logger = require("../utils/logger");
 
 const SQUARE_OFF_CRON = process.env.SQUARE_OFF_CRON || "20 15 * * 1-5"; // 3:20pm IST, Mon-Fri
@@ -87,7 +92,63 @@ async function runSquareOff() {
     `[SQUARE-OFF] Complete: ${squared} squared off, ${failed} failed`
   );
 
-  return { squared, failed };
+  // ── Day-order expiry sweep ────────────────────────────────────────
+  // Real exchanges treat SL/SL_M/LIMIT orders as DAY orders — cancelled
+  // automatically at market close if untriggered, for BOTH CNC and MIS
+  // (this is different from GTT, which is a broker-side feature that
+  // deliberately persists across days — see migration 007). So this
+  // sweep is NOT scoped to product_type = 'MIS' like the square-off loop
+  // above; a CNC stop-loss that never triggered today expires too.
+  //
+  // executionEngine already auto-cancels a resting SL/SL_M/LIMIT order
+  // the instant the position it's linked to (order.position_id) fills
+  // flat — that covers the MIS square-off closes above via the exact
+  // same placeOrder()→executeOrder() pipeline. This sweep is the
+  // belt-and-braces backstop for whatever that hook can't catch: orders
+  // placed before migration 012 with no position_id, a position that was
+  // never linked, or a fill still mid-flight in the queue when this cron
+  // fires. Without it, a stale SL order would (a) sit in the
+  // orderWorker's 1s requeue loop forever — burning a Bull job every
+  // second indefinitely — and (b) could fire days later against whatever
+  // new position happens to occupy that instrument/wallet slot next,
+  // exactly the bug this whole migration exists to prevent.
+  const staleCancelled = await cancelStaleRestingOrders();
+
+  return { squared, failed, staleCancelled };
+}
+
+async function cancelStaleRestingOrders() {
+  const { rows: staleOrders } = await pool.query(
+    `
+    SELECT id, user_id, symbol, product_type
+    FROM orders
+    WHERE order_type IN ('SL', 'SL_M', 'LIMIT')
+    AND status IN ('PENDING', 'OPEN')
+    `,
+  );
+
+  if (staleOrders.length === 0) {
+    return 0;
+  }
+
+  logger.info(`[SQUARE-OFF] Sweeping ${staleOrders.length} stale DAY order(s) (SL/SL_M/LIMIT, CNC+MIS)`);
+
+  let cancelled = 0;
+
+  for (const order of staleOrders) {
+    try {
+      await cancelOrder(order.user_id, order.id);
+      cancelled += 1;
+    } catch (err) {
+      logger.error(
+        `[SQUARE-OFF] Failed to cancel stale order ${order.id} (${order.symbol}/${order.product_type}): ${err.message}`,
+      );
+      // Same reasoning as the position loop above — one bad order
+      // shouldn't block the rest of the sweep.
+    }
+  }
+
+  return cancelled;
 }
 
 function scheduleSquareOff() {
@@ -106,4 +167,4 @@ function scheduleSquareOff() {
   );
 }
 
-module.exports = { runSquareOff, scheduleSquareOff };
+module.exports = { runSquareOff, scheduleSquareOff, cancelStaleRestingOrders };

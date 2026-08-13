@@ -36,6 +36,93 @@ const logger = require("../utils/logger");
 const { getIndicatorSnapshot, maybeGenerateJournalEntry } = require("./journalService");
 
 // ─────────────────────────────────────────────────────────────
+// Cancel sibling resting orders once a position goes flat
+// ─────────────────────────────────────────────────────────────
+//
+// A resting SL/SL_M/LIMIT order is linked to the position it protects via
+// orders.position_id (set in orderService.placeOrder — see migration 012).
+// If that position gets closed some other way FIRST — a manual exit, RMS
+// force-close, or the 3:20pm MIS square-off — the SL order is still sat
+// in the orderWorker's 1s requeue loop. Left alone, the moment its
+// trigger price is later hit it fires against a position that no longer
+// exists, silently opening a brand-new, unintended position instead of
+// protecting anything (or a naked short/long the user never asked for).
+//
+// Called from inside the same DB transaction as the fill that zeroed the
+// position, so this is atomic with the close — no window where the
+// position is flat but the stale SL order is still live.
+async function cancelSiblingOrders(client, { positionId, excludeOrderId, userId, symbol, reason }) {
+  if (!positionId) return;
+
+  const { rows: siblings } = await client.query(
+    `
+    SELECT id, wallet_id, margin_used, quantity, filled_qty
+    FROM orders
+    WHERE position_id = $1
+    AND id != $2
+    AND status IN ('PENDING', 'OPEN')
+    FOR UPDATE
+    `,
+    [positionId, excludeOrderId],
+  );
+
+  for (const sib of siblings) {
+    // Release any margin this resting order still had reserved. In
+    // practice this is usually 0 for a same-side exit order (see the
+    // openQty logic in orderService), but computed generically so it's
+    // still correct if a partial-fill scenario ever leaves margin_used > 0.
+    const marginUsed = parseFloat(sib.margin_used || 0);
+
+    if (marginUsed > 0) {
+      const filledQty = parseFloat(sib.filled_qty || 0);
+      const unfilledQty = parseFloat(sib.quantity) - filledQty;
+      const releaseAmount = (unfilledQty / parseFloat(sib.quantity)) * marginUsed;
+
+      if (releaseAmount > 0) {
+        await client.query(
+          `UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2`,
+          [releaseAmount, sib.wallet_id],
+        );
+
+        const { rows: [w] } = await client.query(
+          `SELECT balance FROM wallets WHERE id = $1`,
+          [sib.wallet_id],
+        );
+
+        await client.query(
+          `
+          INSERT INTO wallet_transactions
+            (wallet_id, type, amount, balance_after, ref_order_id, note)
+          VALUES ($1, 'order_release', $2, $3, $4, $5)
+          `,
+          [sib.wallet_id, releaseAmount, w.balance, sib.id, `Auto-cancel release for ${symbol}`],
+        );
+      }
+    }
+
+    await client.query(
+      `UPDATE orders SET status = 'CANCELLED', cancelled_at = NOW(), rejection_reason = $2 WHERE id = $1`,
+      [sib.id, reason],
+    );
+
+    await client.query(
+      `INSERT INTO order_events (order_id, event, payload) VALUES ($1, 'CANCELLED', $2)`,
+      [sib.id, JSON.stringify({ reason, positionId })],
+    );
+
+    logger.info(`[SL] Auto-cancelled resting order ${sib.id} (${symbol}) — ${reason}`);
+
+    notifyClient(userId, {
+      type: "ORDER_AUTO_CANCELLED",
+      orderId: sib.id,
+      symbol,
+      reason,
+      ts: Date.now(),
+    });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 // Execute Order
 // ─────────────────────────────────────────────────────────────
 
@@ -334,6 +421,16 @@ async function executeOrder(jobData) {
 
         positionId = existingPos.id;
 
+        if (newQty === 0) {
+          await cancelSiblingOrders(client, {
+            positionId: existingPos.id,
+            excludeOrderId: orderId,
+            userId,
+            symbol,
+            reason: "Position closed — linked stop-loss/limit order auto-cancelled",
+          });
+        }
+
         await client.query(
           `
           UPDATE wallets
@@ -556,6 +653,16 @@ async function executeOrder(jobData) {
         }
 
         positionId = pos.id;
+
+        if (newQty <= 0) {
+          await cancelSiblingOrders(client, {
+            positionId: pos.id,
+            excludeOrderId: orderId,
+            userId,
+            symbol,
+            reason: "Position closed — linked stop-loss/limit order auto-cancelled",
+          });
+        }
 
         // Credit wallet
         await client.query(
