@@ -5,6 +5,7 @@ import os
 import time
 import redis
 import requests
+from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -117,12 +118,31 @@ def fetch_historical(instrument_key, interval, from_date, to_date):
     data = response.json()
     candles = data.get('data', {}).get('candles', [])
 
-    # Format for Lightweight Charts: { time (unix seconds), open, high, low, close, volume }
+    # Format for Lightweight Charts: { time, open, high, low, close, volume }
+    #
+    # Lightweight Charts' `time` field must be one of:
+    #   - a Unix timestamp in SECONDS (number)
+    #   - a "YYYY-MM-DD" string (day/week/month bars)
+    #   - a {year, month, day} object
+    # It does NOT accept YYYYMMDD as a plain integer — that gets read as a
+    # Unix timestamp and plots everything around Aug 1970. For intraday
+    # intervals we need the full timestamp (not just the date), or every
+    # candle in the same trading day collapses onto one x-axis point.
+    is_intraday = "minute" in interval or "hour" in interval
+
     formatted = []
     for c in reversed(candles):  # Upstox sends newest first, reverse for chart
         try:
+            if is_intraday:
+                # c[0] example: "2024-01-15T09:15:00+05:30"
+                dt = datetime.fromisoformat(c[0])
+                time_val = int(dt.timestamp())  # real unix seconds, UTC-correct
+            else:
+                # day/week bars — plain date string, exactly what LWC wants
+                time_val = c[0][:10]
+
             formatted.append({
-                "time":   int(c[0][:10].replace("-", "")),  # YYYYMMDD as int for day candles
+                "time":   time_val,
                 "open":   c[1],
                 "high":   c[2],
                 "low":    c[3],

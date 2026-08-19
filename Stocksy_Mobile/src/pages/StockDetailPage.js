@@ -271,8 +271,8 @@ const StockDetailPage = ({ navigation, route }) => {
           </View>
         </View>
 
-        {/* ── TradingView Advanced Chart Modal ────────────────────────────── */}
-        <TradingViewModal
+        {/* ── Expanded candlestick chart modal ────────────────────────────── */}
+        <ExpandedChartModal
           visible={chartExpanded}
           symbol={symbol}
           name={name}
@@ -281,6 +281,8 @@ const StockDetailPage = ({ navigation, route }) => {
           isPositive={isPositive}
           accentColor={accentColor}
           accentBg={accentBg}
+          candles={candles}
+          chartLoading={chartLoading}
           onClose={() => setChartExpanded(false)}
         />
 
@@ -1208,21 +1210,13 @@ const styles = StyleSheet.create({
   },
 });
 
-// ── TradingView Advanced Chart Modal ─────────────────────────────────────────
+// ── Expanded Chart Modal ──────────────────────────────────────────────────
 /**
- * Maps your NSE symbol → TradingView ticker format.
- * All NSE equity stocks use "NSE:" prefix.
- * The two indices need special names.
+ * Full-screen candlestick + volume chart, built on our own OHLC data
+ * (ChartView in "candles" mode) rather than TradingView's widget — so it
+ * always shows this stock's actual price, no symbol mapping required.
  */
-const toTVSymbol = (symbol) => {
-  const overrides = {
-    "NIFTY 50": "NSE:NIFTY",
-    "NIFTY BANK": "NSE:BANKNIFTY",
-  };
-  return overrides[symbol] ?? `NSE:${symbol}`;
-};
-
-const TradingViewModal = ({
+const ExpandedChartModal = ({
   visible,
   symbol,
   name,
@@ -1231,52 +1225,16 @@ const TradingViewModal = ({
   isPositive,
   accentColor,
   accentBg,
+  candles,
+  chartLoading,
   onClose,
 }) => {
-  const tvSymbol = toTVSymbol(symbol);
-
-  // Full TradingView Advanced Chart widget — candlesticks, indicators,
-  // drawing tools, volume, all timeframes — exactly what Groww & Zerodha use.
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-  <style>
-    * { margin: 0; padding: 0; box-sizing:border-box; }
-    html, body { width:100%; height:100vh; background:#131722; overflow:hidden; }
-    #tv_chart_container { width:100%; height:100vh; }
-  </style>
-</head>
-<body>
-  <div id="tv_chart_container"></div>
-  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-  <script type="text/javascript">
-    new TradingView.widget({
-      autosize: true,
-      symbol: "${tvSymbol}",
-      interval: "D",
-      timezone: "Asia/Kolkata",
-      theme: "dark",
-      style: "1",
-      locale: "en",
-      toolbar_bg: "#1E2433",
-      enable_publishing: false,
-      allow_symbol_change: false,
-      container_id: "tv_chart_container",
-      hide_top_toolbar: false,
-      hide_legend: false,
-      save_image: false,
-      show_popup_button: false,
-      withdateranges: true,
-      hide_side_toolbar: false,
-      details: false,
-      hotlist: false,
-      calendar: false,
-    });
-  </script>
-</body>
-</html>`;
+  // Modals render on a separate native surface, so the automatic
+  // SafeAreaView behavior (and the insets read at the screen level)
+  // aren't reliable in here — especially with statusBarTranslucent,
+  // which draws our content underneath the status bar. Read insets
+  // directly inside the modal and push the header down manually.
+  const modalInsets = useSafeAreaInsets();
 
   return (
     <Modal
@@ -1286,7 +1244,7 @@ const TradingViewModal = ({
       onRequestClose={onClose}
     >
       <StatusBar barStyle="light-content" backgroundColor={Colors.chartBg} />
-      <SafeAreaView style={tvStyles.safe}>
+      <View style={[tvStyles.safe, { paddingTop: modalInsets.top }]}>
         {/* ── Header ─────────────────────────────────────────────────── */}
         <View style={tvStyles.header}>
           {/* Symbol + company name */}
@@ -1323,20 +1281,29 @@ const TradingViewModal = ({
           </TouchableOpacity>
         </View>
 
-        {/* ── TradingView Advanced Chart ──────────────────────────────── */}
-        <WebView
-          source={{ html }}
-          style={{ flex: 1, backgroundColor: Colors.chartBg }}
-          originWhitelist={["*"]}
-          javaScriptEnabled
-          domStorageEnabled
-          mixedContentMode="always"
-          allowsInlineMediaPlayback
-          scrollEnabled={false}
-          bounces={false}
-          onError={(e) => console.warn("TradingView error:", e.nativeEvent)}
-        />
-      </SafeAreaView>
+        {/* ── Candlestick + volume chart, fed from our own OHLC data ────
+             Only mount the WebView while the modal is actually visible.
+             RN's <Modal> doesn't reliably attach/load its children until
+             shown, so a WebView created while still hidden can get stuck
+             with onLoadEnd never firing — which permanently blocks live
+             price injection and freezes the chart on its first static
+             price. Conditionally mounting forces a clean load every time
+             the modal opens. ── */}
+        <View style={{ flex: 1, backgroundColor: Colors.chartBg }}>
+          {visible && (
+            <ChartView
+              key={symbol}
+              candles={candles}
+              livePrice={ltp}
+              isPositive={isPositive}
+              loading={chartLoading}
+              chartType="candles"
+              showVolume
+              height={"100%"}
+            />
+          )}
+        </View>
+      </View>
     </Modal>
   );
 };
