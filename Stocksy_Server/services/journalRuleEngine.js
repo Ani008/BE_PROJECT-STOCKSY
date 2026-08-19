@@ -35,6 +35,7 @@ const RULES = [
   // ── Entry quality ──────────────────────────────────────────────────────
   {
     id: 'overbought_entry_long',
+    patternLabel: 'entries chasing a fast price spike (overbought)',
     condition: (ctx) => ctx.side === 'BUY' && ctx.entry?.rsi != null && ctx.entry.rsi > 70,
     plainText: 'You bought right after a fast price spike — the stock may have already run too far, too fast.',
     technicalText: (ctx) => `RSI was ${ctx.entry.rsi} at entry (above the 70 "overbought" line)`,
@@ -43,6 +44,7 @@ const RULES = [
   },
   {
     id: 'oversold_entry_short',
+    patternLabel: 'short entries chasing a fast drop (oversold)',
     condition: (ctx) => ctx.side === 'SELL' && ctx.entry?.rsi != null && ctx.entry.rsi < 30,
     plainText: 'You sold short right after a fast drop — the stock may have already fallen too far, too fast.',
     technicalText: (ctx) => `RSI was ${ctx.entry.rsi} at entry (below the 30 "oversold" line)`,
@@ -51,6 +53,7 @@ const RULES = [
   },
   {
     id: 'above_vwap_entry',
+    patternLabel: 'entries above the average price for the day (late entries)',
     condition: (ctx) => ctx.side === 'BUY' && ctx.entry?.vwap != null && ctx.entry?.ltp != null && ctx.entry.ltp > ctx.entry.vwap,
     plainText: 'You bought at a price higher than what most people paid for this stock today — you may have entered late.',
     technicalText: (ctx) => `Entry ₹${ctx.entry.ltp} was above VWAP ₹${ctx.entry.vwap}`,
@@ -59,6 +62,7 @@ const RULES = [
   },
   {
     id: 'high_volume_entry',
+    patternLabel: 'entries during unusually busy minutes',
     condition: (ctx) => ctx.entry?.volume_ratio != null && ctx.entry.volume_ratio >= 3,
     plainText: 'You entered during an unusually busy minute for this stock — a lot more trading than normal was happening.',
     technicalText: (ctx) => `Volume was ${ctx.entry.volume_ratio}x the recent average at entry`,
@@ -69,6 +73,7 @@ const RULES = [
   // ── Exit quality ────────────────────────────────────────────────────────
   {
     id: 'quick_panic_exit',
+    patternLabel: 'quick exits (under 5 min) on a loss',
     condition: (ctx) => ctx.pnl < 0 && ctx.holdingSeconds != null && ctx.holdingSeconds < 5 * 60,
     plainText: 'You exited in under 5 minutes on a loss — this can be a sign of a rushed, panicked exit rather than a planned one.',
     technicalText: (ctx) => `Held for ${Math.round(ctx.holdingSeconds / 60)} min before exiting at a loss`,
@@ -77,6 +82,7 @@ const RULES = [
   },
   {
     id: 'premature_exit_normal_pullback',
+    patternLabel: 'exits on a normal dip, not a real reversal',
     condition: (ctx) => ctx.side === 'BUY' && ctx.pnl < 0 && ctx.exit?.rsi != null && ctx.exit.rsi > 40 && ctx.exit.rsi < 60,
     plainText: 'You sold during a normal, small dip — not a real reversal. The stock was not actually falling hard, it just paused.',
     technicalText: (ctx) => `RSI was ${ctx.exit.rsi} at exit — nowhere near the "oversold" zone`,
@@ -85,6 +91,7 @@ const RULES = [
   },
   {
     id: 'below_vwap_exit_loss',
+    patternLabel: 'exits below the average price for the day',
     condition: (ctx) => ctx.side === 'BUY' && ctx.pnl < 0 && ctx.exit?.vwap != null && ctx.exit?.ltp != null && ctx.exit.ltp < ctx.exit.vwap,
     plainText: "You exited below today's average price for this stock.",
     technicalText: (ctx) => `Exit ₹${ctx.exit.ltp} was below VWAP ₹${ctx.exit.vwap}`,
@@ -95,6 +102,7 @@ const RULES = [
   // ── Positive reinforcement (rules aren't only about mistakes) ───────────
   {
     id: 'patient_entry_profit',
+    patternLabel: 'calm, unhurried entries (neutral RSI)',
     condition: (ctx) => ctx.pnl > 0 && ctx.entry?.rsi != null && ctx.entry.rsi >= 40 && ctx.entry.rsi <= 60,
     plainText: 'You entered at a calm, unhurried price — not chasing a spike — and it paid off.',
     technicalText: (ctx) => `RSI was ${ctx.entry.rsi} at entry — a neutral zone, not overbought or oversold`,
@@ -103,6 +111,7 @@ const RULES = [
   },
   {
     id: 'held_through_profit',
+    patternLabel: 'trades held 20+ min through a profit',
     condition: (ctx) => ctx.pnl > 0 && ctx.holdingSeconds != null && ctx.holdingSeconds >= 20 * 60,
     plainText: 'You gave this trade time to work instead of closing it early — that patience showed up in the result.',
     technicalText: (ctx) => `Held for ${Math.round(ctx.holdingSeconds / 60)} min before exiting at a profit`,
@@ -147,4 +156,9 @@ function safeCall(fn, ctx) {
   }
 }
 
-module.exports = { evaluateTrade, RULES };
+// ruleId -> short human-readable label, used by the weekly pattern view
+// ("4 of your 6 losing trades were {label}") so the frontend doesn't need
+// its own copy of rule text.
+const RULE_LABELS = Object.fromEntries(RULES.map((r) => [r.id, r.patternLabel]));
+
+module.exports = { evaluateTrade, RULES, RULE_LABELS };

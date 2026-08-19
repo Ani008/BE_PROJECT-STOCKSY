@@ -24,7 +24,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 
-import { fetchJournalEntries } from "../../services/journalService";
+import { fetchJournalEntries, fetchWeeklyPatterns, fetchTopKeywords } from "../../services/journalService";
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -133,8 +133,152 @@ function JournalCard({ entry }) {
   );
 }
 
+// ─── Weekly pattern summary — "N of your M losing trades were X" ──────────
+// This is the card the PDF calls out as the actual ₹199/month hook: a
+// single trade's insight is useful, but the same pattern repeating across
+// a week, with a number attached, is what changes behavior.
+function WeeklyPatternCard({ summary }) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (!summary || summary.totalTrades === 0) return null;
+
+  // Only surface patterns that fired on 2+ trades — a single occurrence
+  // isn't a "pattern" yet, it's just one trade (already covered by its
+  // own card below).
+  const patterns = (summary.patterns || []).filter((p) => p.count >= 2);
+  if (patterns.length === 0) return null;
+
+  const top = patterns[0];
+  const rest = patterns.slice(1);
+  const isCostly = top.avgPnl < 0 && top.estimatedCost != null;
+
+  return (
+    <View style={styles.weeklyCard}>
+      <View style={styles.weeklyHeaderRow}>
+        <Ionicons name="trending-up-outline" size={moderateScale(16)} color={Colors.primary} />
+        <Text style={styles.weeklyHeaderText}>This week's pattern</Text>
+      </View>
+
+      <Text style={styles.weeklyHeadline}>
+        {top.count} of your {summary.totalTrades} trades this week were {top.label}.
+      </Text>
+
+      {top.otherAvgPnl != null && (
+        <Text style={styles.weeklyStat}>
+          Your average {top.avgPnl < 0 ? "loss" : "result"} on these:{" "}
+          <Text style={styles.weeklyStatEmphasis}>{fmtSigned(top.avgPnl)}</Text>
+          {"  ·  "}Your average otherwise:{" "}
+          <Text style={styles.weeklyStatEmphasis}>{fmtSigned(top.otherAvgPnl)}</Text>
+        </Text>
+      )}
+
+      {isCostly && (
+        <View style={styles.weeklyCostBox}>
+          <Text style={styles.weeklyCostText}>
+            This pattern cost you roughly {fmtMoney(top.estimatedCost)} more than your other trades this week.
+          </Text>
+        </View>
+      )}
+
+      {rest.length > 0 && (
+        <TouchableOpacity onPress={() => setExpanded((e) => !e)} style={styles.expandBtn}>
+          <Text style={styles.expandBtnText}>
+            {expanded ? "Show less" : `+${rest.length} more pattern${rest.length > 1 ? "s" : ""} this week`}
+          </Text>
+          <Ionicons
+            name={expanded ? "chevron-up" : "chevron-down"}
+            size={moderateScale(14)}
+            color={Colors.primary}
+          />
+        </TouchableOpacity>
+      )}
+
+      {expanded &&
+        rest.map((p) => (
+          <View key={p.ruleId} style={styles.weeklySubPattern}>
+            <Text style={styles.weeklySubPatternText}>
+              {p.count} trades were {p.label} — avg {fmtSigned(p.avgPnl)}
+            </Text>
+          </View>
+        ))}
+    </View>
+  );
+}
+
+function fmtSigned(n) {
+  if (n == null || isNaN(n)) return "—";
+  return (n >= 0 ? "+" : "-") + fmtMoney(n);
+}
+
+// ─── Range filter — Week / Month / All, segmented control ─────────────────
+const RANGE_OPTIONS = [
+  { key: "week", label: "Week" },
+  { key: "month", label: "Month" },
+  { key: "all", label: "All" },
+];
+
+function RangeSelector({ range, onChange }) {
+  return (
+    <View style={styles.rangeRow}>
+      {RANGE_OPTIONS.map((opt) => {
+        const active = opt.key === range;
+        return (
+          <TouchableOpacity
+            key={opt.key}
+            style={[styles.rangePill, active && styles.rangePillActive]}
+            onPress={() => onChange(opt.key)}
+          >
+            <Text style={[styles.rangePillText, active && styles.rangePillTextActive]}>{opt.label}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+// ─── Top keyword chips — the 5 most-frequent patterns over the selected
+// range. Tapping one filters the trade list below to just those trades;
+// tapping the active chip again (or "Clear") removes the filter. ─────────
+function KeywordChips({ keywordsSummary, selectedRuleId, onSelect }) {
+  const keywords = keywordsSummary?.patterns || [];
+  if (keywords.length === 0) return null;
+
+  return (
+    <View style={styles.chipsSection}>
+      <Text style={styles.chipsLabel}>Top patterns</Text>
+      <FlatList
+        data={keywords}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        keyExtractor={(item) => item.ruleId}
+        contentContainerStyle={styles.chipsRow}
+        renderItem={({ item }) => {
+          const active = item.ruleId === selectedRuleId;
+          return (
+            <TouchableOpacity
+              style={[styles.chip, active && styles.chipActive]}
+              onPress={() => onSelect(active ? null : item.ruleId)}
+            >
+              <Text style={[styles.chipText, active && styles.chipTextActive]} numberOfLines={1}>
+                {item.label}
+              </Text>
+              <View style={[styles.chipCountBadge, active && styles.chipCountBadgeActive]}>
+                <Text style={[styles.chipCountText, active && styles.chipCountTextActive]}>{item.count}</Text>
+              </View>
+            </TouchableOpacity>
+          );
+        }}
+      />
+    </View>
+  );
+}
+
 const JournalScreen = ({ navigation }) => {
   const [entries, setEntries] = useState([]);
+  const [patternSummary, setPatternSummary] = useState(null);
+  const [keywordsSummary, setKeywordsSummary] = useState(null);
+  const [range, setRange] = useState("week");
+  const [selectedRuleId, setSelectedRuleId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -142,15 +286,21 @@ const JournalScreen = ({ navigation }) => {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
     try {
-      const data = await fetchJournalEntries(50);
-      setEntries(data || []);
+      const [entriesData, patternsData, keywordsData] = await Promise.all([
+        fetchJournalEntries(50, { range, ruleId: selectedRuleId }),
+        fetchWeeklyPatterns().catch(() => null), // pattern view is a bonus, never block the list on it
+        fetchTopKeywords(range).catch(() => null), // same — chips are a bonus, not a blocker
+      ]);
+      setEntries(entriesData || []);
+      setPatternSummary(patternsData);
+      setKeywordsSummary(keywordsData);
     } catch (err) {
       // Global toast already covers this.
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [range, selectedRuleId]);
 
   useEffect(() => {
     load();
@@ -187,12 +337,34 @@ const JournalScreen = ({ navigation }) => {
         <View style={styles.headerBtn} />
       </View>
 
+      <RangeSelector range={range} onChange={(r) => { setSelectedRuleId(null); setRange(r); }} />
+
       <FlatList
         data={entries}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         renderItem={({ item }) => <JournalCard entry={item} />}
+        ListHeaderComponent={
+          <>
+            <KeywordChips
+              keywordsSummary={keywordsSummary}
+              selectedRuleId={selectedRuleId}
+              onSelect={setSelectedRuleId}
+            />
+            {selectedRuleId && (
+              <View style={styles.activeFilterRow}>
+                <Text style={styles.activeFilterText}>
+                  Showing only: {(keywordsSummary?.patterns || []).find((p) => p.ruleId === selectedRuleId)?.label || selectedRuleId}
+                </Text>
+                <TouchableOpacity onPress={() => setSelectedRuleId(null)}>
+                  <Text style={styles.clearFilterText}>Clear</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            <WeeklyPatternCard summary={patternSummary} />
+          </>
+        }
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={Colors.primary} />
         }
@@ -201,10 +373,13 @@ const JournalScreen = ({ navigation }) => {
             <View style={styles.emptyIconRing}>
               <Ionicons name="bulb-outline" size={moderateScale(28)} color={Colors.textMuted} />
             </View>
-            <Text style={styles.emptyTitle}>No journal entries yet</Text>
+            <Text style={styles.emptyTitle}>
+              {selectedRuleId ? "No trades match this pattern" : "No journal entries yet"}
+            </Text>
             <Text style={styles.emptySubtitle}>
-              Once you close a trade — buy then sell, or sell then buy back — you'll get a card
-              here explaining what happened and what to try next time.
+              {selectedRuleId
+                ? "Try clearing the filter or a wider time range."
+                : "Once you close a trade — buy then sell, or sell then buy back — you'll get a card here explaining what happened and what to try next time."}
             </Text>
           </View>
         }
@@ -250,6 +425,113 @@ const styles = StyleSheet.create({
     paddingBottom: moderateScale(40),
     flexGrow: 1,
   },
+  rangeRow: {
+    flexDirection: "row",
+    paddingHorizontal: moderateScale(20),
+    marginBottom: moderateScale(14),
+    gap: moderateScale(8),
+  },
+  rangePill: {
+    paddingHorizontal: moderateScale(16),
+    paddingVertical: moderateScale(7),
+    borderRadius: moderateScale(18),
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  rangePillActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  rangePillText: {
+    fontSize: fontScale(Typography.caption),
+    fontWeight: "600",
+    color: Colors.textSecondary,
+  },
+  rangePillTextActive: {
+    color: Colors.white,
+  },
+  chipsSection: {
+    marginBottom: moderateScale(14),
+  },
+  chipsLabel: {
+    fontSize: fontScale(Typography.tiny),
+    fontWeight: "700",
+    color: Colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+    marginBottom: moderateScale(8),
+  },
+  chipsRow: {
+    gap: moderateScale(8),
+  },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: moderateScale(6),
+    paddingHorizontal: moderateScale(12),
+    paddingVertical: moderateScale(8),
+    borderRadius: moderateScale(14),
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    maxWidth: moderateScale(220),
+  },
+  chipActive: {
+    backgroundColor: Colors.primaryLight,
+    borderColor: Colors.primary,
+  },
+  chipText: {
+    fontSize: fontScale(Typography.tiny),
+    fontWeight: "600",
+    color: Colors.textSecondary,
+    flexShrink: 1,
+  },
+  chipTextActive: {
+    color: Colors.primary,
+  },
+  chipCountBadge: {
+    minWidth: moderateScale(18),
+    height: moderateScale(18),
+    borderRadius: moderateScale(9),
+    backgroundColor: Colors.background,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: moderateScale(4),
+  },
+  chipCountBadgeActive: {
+    backgroundColor: Colors.primary,
+  },
+  chipCountText: {
+    fontSize: fontScale(Typography.tiny),
+    fontWeight: "700",
+    color: Colors.textSecondary,
+  },
+  chipCountTextActive: {
+    color: Colors.white,
+  },
+  activeFilterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: Colors.primaryLight,
+    borderRadius: moderateScale(10),
+    paddingHorizontal: moderateScale(12),
+    paddingVertical: moderateScale(9),
+    marginBottom: moderateScale(14),
+  },
+  activeFilterText: {
+    flex: 1,
+    fontSize: fontScale(Typography.tiny),
+    color: Colors.secondary,
+    fontWeight: "600",
+    marginRight: moderateScale(8),
+  },
+  clearFilterText: {
+    fontSize: fontScale(Typography.tiny),
+    color: Colors.primary,
+    fontWeight: "700",
+  },
   card: {
     backgroundColor: Colors.card,
     borderRadius: moderateScale(16),
@@ -257,6 +539,66 @@ const styles = StyleSheet.create({
     marginBottom: moderateScale(14),
     borderWidth: 1,
     borderColor: Colors.border,
+  },
+  weeklyCard: {
+    backgroundColor: Colors.card,
+    borderRadius: moderateScale(16),
+    padding: moderateScale(16),
+    marginBottom: moderateScale(18),
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+  },
+  weeklyHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: moderateScale(6),
+    marginBottom: moderateScale(8),
+  },
+  weeklyHeaderText: {
+    fontSize: fontScale(Typography.tiny),
+    fontWeight: "700",
+    color: Colors.primary,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  weeklyHeadline: {
+    fontSize: fontScale(Typography.body),
+    fontWeight: "700",
+    color: Colors.text,
+    lineHeight: moderateScale(22),
+    marginBottom: moderateScale(8),
+  },
+  weeklyStat: {
+    fontSize: fontScale(Typography.caption),
+    color: Colors.textSecondary,
+    lineHeight: moderateScale(19),
+  },
+  weeklyStatEmphasis: {
+    fontWeight: "700",
+    color: Colors.text,
+  },
+  weeklyCostBox: {
+    backgroundColor: Colors.lossBg,
+    borderRadius: moderateScale(10),
+    padding: moderateScale(10),
+    marginTop: moderateScale(10),
+  },
+  weeklyCostText: {
+    fontSize: fontScale(Typography.caption),
+    color: Colors.loss,
+    fontWeight: "600",
+    lineHeight: moderateScale(19),
+  },
+  weeklySubPattern: {
+    paddingTop: moderateScale(8),
+    marginTop: moderateScale(8),
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  weeklySubPatternText: {
+    fontSize: fontScale(Typography.caption),
+    color: Colors.textSecondary,
+    lineHeight: moderateScale(18),
   },
   cardHeader: {
     flexDirection: "row",

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -14,7 +14,7 @@ import {
   Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { placeOrder } from "../../services/orderService";
+import { placeOrder, cancelOrder, fetchOrders } from "../../services/orderService";
 
 // ─── Theme tokens — matches PortfolioPage.js's `C` palette so this view sits
 // naturally alongside the rest of the (light) app instead of standing out as
@@ -52,10 +52,17 @@ function fmtPct(n) {
   return (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
 }
 
+// Same identity used everywhere a position needs to be matched against its
+// resting stop-loss order: wallet + instrument + product type.
+function positionKey(p) {
+  return `${p.wallet_id}:${p.instrument_key}:${p.product_type}`;
+}
+
 // ─── Reusable: PositionRow ────────────────────────────────────────────────────
-function PositionRow({ position, onPress, onSetStopLoss }) {
+function PositionRow({ position, onPress, onSetStopLoss, onRemoveStopLoss }) {
   const isPos = position.unrealisedPnl >= 0;
   const isShort = position.isShort ?? position.qty < 0;
+  const slOrder = position.stopLossOrder; // null if none resting
   return (
     <TouchableOpacity
       style={styles.row}
@@ -72,14 +79,11 @@ function PositionRow({ position, onPress, onSetStopLoss }) {
               <Text style={[styles.tagText, styles.shortTagText]}>Short</Text>
             </View>
           )}
-          {position.hasStopLoss && (
-            // NOTE: hasStopLoss isn't populated yet — wire it up by passing
-            // this component the open orders list (GET /api/orders?status=OPEN)
-            // and matching on wallet_id + instrument_key + product_type +
-            // order_type IN ('SL','SL_M'). Left as a no-op badge for now so
-            // the UI is ready the moment that data is threaded through.
+          {slOrder && (
             <View style={[styles.tag, styles.slTag]}>
-              <Text style={[styles.tagText, styles.slTagText]}>SL set</Text>
+              <Text style={[styles.tagText, styles.slTagText]}>
+                SL {fmt(parseFloat(slOrder.trigger_price), 2)}
+              </Text>
             </View>
           )}
         </View>
@@ -97,19 +101,44 @@ function PositionRow({ position, onPress, onSetStopLoss }) {
         <Text style={styles.mkt}>
           Mkt {position.ltp != null ? fmt(position.ltp) : "—"}
         </Text>
-        <TouchableOpacity
-          style={styles.slBtn}
-          activeOpacity={0.7}
-          onPress={(e) => {
-            e.stopPropagation?.();
-            onSetStopLoss?.(position);
-          }}
-        >
-          <Ionicons name="shield-half-outline" size={12} color={L.blue} />
-          <Text style={styles.slBtnText}>
-            {position.hasStopLoss ? "Edit SL" : "Set SL"}
-          </Text>
-        </TouchableOpacity>
+        {slOrder ? (
+          <View style={styles.slActionsRow}>
+            <TouchableOpacity
+              style={styles.slBtn}
+              activeOpacity={0.7}
+              onPress={(e) => {
+                e.stopPropagation?.();
+                onSetStopLoss?.(position);
+              }}
+            >
+              <Ionicons name="create-outline" size={12} color={L.blue} />
+              <Text style={styles.slBtnText}>Edit</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.slBtn, styles.slRemoveBtn]}
+              activeOpacity={0.7}
+              onPress={(e) => {
+                e.stopPropagation?.();
+                onRemoveStopLoss?.(position);
+              }}
+            >
+              <Ionicons name="close-circle-outline" size={12} color={L.red} />
+              <Text style={[styles.slBtnText, styles.slRemoveBtnText]}>Remove</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.slBtn}
+            activeOpacity={0.7}
+            onPress={(e) => {
+              e.stopPropagation?.();
+              onSetStopLoss?.(position);
+            }}
+          >
+            <Ionicons name="shield-half-outline" size={12} color={L.blue} />
+            <Text style={styles.slBtnText}>Set SL</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -122,9 +151,24 @@ function PositionRow({ position, onPress, onSetStopLoss }) {
 // position (see migration 011). SL_M rather than SL: one fewer input to get
 // wrong (no limit price), and it always fills once triggered instead of
 // risking a missed fill in a fast-moving/gappy print.
-function SetStopLossModal({ position, visible, onClose, onPlaced }) {
+//
+// There's no "update order" endpoint — modifying an existing SL is always a
+// cancel-then-replace, same as most brokers actually implement it under the
+// hood. If `existingOrder` is passed, the modal opens pre-filled with its
+// trigger price, and submitting cancels that order first before placing the
+// new one (so there's never a moment with two resting SL orders open).
+function SetStopLossModal({ position, existingOrder, visible, onClose, onPlaced }) {
   const [trigger, setTrigger] = useState("");
   const [placing, setPlacing] = useState(false);
+
+  // Pre-fill (or reset) the input whenever a different position/order opens
+  // in the modal — a plain useState default won't pick up prop changes on
+  // an already-mounted modal instance.
+  useEffect(() => {
+    if (visible) {
+      setTrigger(existingOrder ? String(existingOrder.trigger_price) : "");
+    }
+  }, [visible, existingOrder]);
 
   if (!position) return null;
 
@@ -132,6 +176,7 @@ function SetStopLossModal({ position, visible, onClose, onPlaced }) {
   // Closing side is always the opposite of how the position is held.
   const closingSide = isShort ? "BUY" : "SELL";
   const ltp = position.ltp;
+  const isEditing = !!existingOrder;
 
   const handleClose = () => {
     if (placing) return;
@@ -169,6 +214,12 @@ function SetStopLossModal({ position, visible, onClose, onPlaced }) {
 
     setPlacing(true);
     try {
+      // Cancel-then-replace: remove the old resting SL first so there's
+      // never a window with two SL orders guarding the same position.
+      if (isEditing) {
+        await cancelOrder(existingOrder.id);
+      }
+
       await placeOrder({
         wallet_id: position.wallet_id,
         instrument_key: position.instrument_key,
@@ -183,10 +234,10 @@ function SetStopLossModal({ position, visible, onClose, onPlaced }) {
       });
 
       setTrigger("");
-      onPlaced?.();
+      onPlaced?.(isEditing ? "updated" : "placed");
     } catch (err) {
       Alert.alert(
-        "Couldn't place stop-loss",
+        isEditing ? "Couldn't update stop-loss" : "Couldn't place stop-loss",
         err?.response?.data?.message || err?.message || "Something went wrong.",
       );
     } finally {
@@ -201,7 +252,9 @@ function SetStopLossModal({ position, visible, onClose, onPlaced }) {
         style={styles.modalBackdrop}
       >
         <View style={styles.modalCard}>
-          <Text style={styles.modalTitle}>Set stop-loss · {position.symbol}</Text>
+          <Text style={styles.modalTitle}>
+            {isEditing ? "Update" : "Set"} stop-loss · {position.symbol}
+          </Text>
           <Text style={styles.modalSub}>
             {closingSide === "SELL"
               ? `Auto-sell ${Math.abs(position.qty)} qty if price falls to your trigger.`
@@ -236,7 +289,9 @@ function SetStopLossModal({ position, visible, onClose, onPlaced }) {
               {placing ? (
                 <ActivityIndicator size="small" color="#fff" />
               ) : (
-                <Text style={styles.modalSubmitText}>Place stop-loss</Text>
+                <Text style={styles.modalSubmitText}>
+                  {isEditing ? "Update stop-loss" : "Place stop-loss"}
+                </Text>
               )}
             </TouchableOpacity>
           </View>
@@ -274,9 +329,86 @@ export default function IntradayPositionsView({
 }) {
   const [exiting, setExiting] = useState(false);
   const [slPosition, setSlPosition] = useState(null); // position currently in the "Set SL" modal
+  const [slOrdersByKey, setSlOrdersByKey] = useState({}); // positionKey -> resting SL/SL_M order
+  const [removingKey, setRemovingKey] = useState(null); // positionKey currently being cancelled
+  const wasRefreshingRef = useRef(false);
   const hasPositions = positions.length > 0;
   const totalReturns = totals?.totalUnrealised ?? 0;
   const isPos = totalReturns >= 0;
+
+  // ── Load resting stop-loss orders and index them by position ───────────
+  const loadStopLossOrders = useCallback(async () => {
+    try {
+      const orders = await fetchOrders(100, { status: "OPEN" });
+      const byKey = {};
+      for (const order of orders || []) {
+        if (order.order_type === "SL" || order.order_type === "SL_M") {
+          // Last-write-wins is fine here — cancel-then-replace means there
+          // should only ever be one resting SL per position anyway.
+          byKey[positionKey(order)] = order;
+        }
+      }
+      setSlOrdersByKey(byKey);
+    } catch (err) {
+      // Non-critical — positions still render fine without SL badges.
+    }
+  }, []);
+
+  useEffect(() => {
+    loadStopLossOrders();
+  }, [loadStopLossOrders]);
+
+  // Also refresh whenever a pull-to-refresh completes (refreshing: true → false),
+  // so a SL that triggered/filled elsewhere disappears from the list without
+  // depending on `positions` (which changes on every live-price tick and
+  // would otherwise refetch far too often).
+  useEffect(() => {
+    if (wasRefreshingRef.current && !refreshing) {
+      loadStopLossOrders();
+    }
+    wasRefreshingRef.current = refreshing;
+  }, [refreshing, loadStopLossOrders]);
+
+  const enrichedPositions = positions.map((p) => ({
+    ...p,
+    stopLossOrder: slOrdersByKey[positionKey(p)] || null,
+  }));
+
+  const handleRemoveStopLoss = (position) => {
+    const order = slOrdersByKey[positionKey(position)];
+    if (!order || removingKey) return;
+
+    Alert.alert(
+      "Remove stop-loss?",
+      `${position.symbol} will no longer auto-close if the price hits ${fmt(parseFloat(order.trigger_price), 2)}.`,
+      [
+        { text: "Keep it", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            const key = positionKey(position);
+            setRemovingKey(key);
+            try {
+              await cancelOrder(order.id);
+              setSlOrdersByKey((prev) => {
+                const next = { ...prev };
+                delete next[key];
+                return next;
+              });
+            } catch (err) {
+              Alert.alert(
+                "Couldn't remove stop-loss",
+                err?.response?.data?.message || err?.message || "Something went wrong.",
+              );
+            } finally {
+              setRemovingKey(null);
+            }
+          },
+        },
+      ],
+    );
+  };
 
   const handleExitAll = () => {
     if (!hasPositions || exiting) return;
@@ -394,12 +526,13 @@ export default function IntradayPositionsView({
         {hasPositions ? (
           <View style={styles.listCard}>
             <Text style={styles.openLabel}>{positions.length} OPEN</Text>
-            {positions.map((pos) => (
+            {enrichedPositions.map((pos) => (
               <PositionRow
-                key={`${pos.wallet_id}:${pos.instrument_key}:${pos.product_type}`}
+                key={positionKey(pos)}
                 position={pos}
                 onPress={() => onPressPosition?.(pos)}
                 onSetStopLoss={setSlPosition}
+                onRemoveStopLoss={handleRemoveStopLoss}
               />
             ))}
           </View>
@@ -419,14 +552,16 @@ export default function IntradayPositionsView({
 
       <SetStopLossModal
         position={slPosition}
+        existingOrder={slPosition ? slOrdersByKey[positionKey(slPosition)] : null}
         visible={!!slPosition}
         onClose={() => setSlPosition(null)}
-        onPlaced={() => {
+        onPlaced={(action) => {
           const symbol = slPosition?.symbol;
           setSlPosition(null);
+          loadStopLossOrders(); // refresh the SL badge/actions for this position
           onExited?.(); // reuse the same "refresh portfolio" callback the parent already wires up
           Alert.alert(
-            "Stop-loss placed",
+            action === "updated" ? "Stop-loss updated" : "Stop-loss placed",
             `We'll watch ${symbol} and auto-close this position if it hits your trigger price.`,
           );
         }}
@@ -581,6 +716,16 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700",
     color: L.blue,
+  },
+  slActionsRow: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  slRemoveBtn: {
+    borderColor: L.red,
+  },
+  slRemoveBtnText: {
+    color: L.red,
   },
 
   emptyWrap: {

@@ -27,7 +27,7 @@
 const { pool } = require('../config/postgres');
 const redisClient = require('./redisService');
 const logger = require('../utils/logger');
-const { evaluateTrade } = require('./journalRuleEngine');
+const { evaluateTrade, RULE_LABELS } = require('./journalRuleEngine');
 
 // ── 1. Snapshot capture (called at fill time) ──────────────────────────────
 
@@ -165,15 +165,45 @@ async function maybeGenerateJournalEntry(params) {
   }
 }
 
-// ── 3. Listing / detail ─────────────────────────────────────────────────
+// ── 3. Listing / detail / filtering ─────────────────────────────────────
 
-async function listJournalEntries(userId, { walletId, limit = 20, offset = 0 } = {}) {
+// 'week' → last 7 days, 'month' → last 30 days, 'all'/undefined → no date filter.
+const RANGE_DAYS = { week: 7, month: 30, all: null };
+
+function resolveRangeDays(range) {
+  if (range == null) return null;
+  return Object.prototype.hasOwnProperty.call(RANGE_DAYS, range) ? RANGE_DAYS[range] : null;
+}
+
+/**
+ * @param {object} opts
+ * @param {string} [opts.walletId]
+ * @param {number} [opts.limit=20]
+ * @param {number} [opts.offset=0]
+ * @param {'week'|'month'|'all'} [opts.range]  — omit for no date filter (same as 'all')
+ * @param {string} [opts.ruleId]                — only entries where this rule fired
+ *   (e.g. clicking a "top keyword" chip)
+ */
+async function listJournalEntries(userId, { walletId, limit = 20, offset = 0, range, ruleId } = {}) {
   const params = [userId];
   let where = 'WHERE user_id = $1';
+
   if (walletId) {
     params.push(walletId);
     where += ` AND wallet_id = $${params.length}`;
   }
+
+  const days = resolveRangeDays(range);
+  if (days != null) {
+    params.push(days);
+    where += ` AND exit_at >= NOW() - ($${params.length} || ' days')::interval`;
+  }
+
+  if (ruleId) {
+    params.push(ruleId);
+    where += ` AND $${params.length} = ANY(rule_ids)`;
+  }
+
   params.push(limit, offset);
 
   const { rows } = await pool.query(
@@ -198,16 +228,27 @@ async function getJournalEntry(userId, id) {
 }
 
 /**
- * Weekly pattern view — "N of your M losing trades this week were X".
- * Groups by rule_id across the last 7 days, computing frequency + avg P&L
- * for trades where that rule fired vs. trades where it didn't.
+ * Shared aggregation behind both the "this week's pattern" narrative card
+ * and the "top keywords" filter chips — same grouping logic, different
+ * sort order and time window.
+ *
+ * @param {object} opts
+ * @param {string} [opts.walletId]
+ * @param {number|null} [opts.days=7] — lookback window in days, or null for all-time
+ * @param {'avgPnl'|'count'} [opts.sortBy='avgPnl'] — 'avgPnl' = worst pattern first
+ *   (for the narrative card), 'count' = most frequent first (for keyword chips)
+ * @param {number} [opts.limit] — cap the number of patterns returned
  */
-async function getWeeklyPatterns(userId, { walletId } = {}) {
+async function computePatternSummary(userId, { walletId, days = 7, sortBy = 'avgPnl', limit } = {}) {
   const params = [userId];
-  let where = 'WHERE user_id = $1 AND exit_at >= NOW() - INTERVAL \'7 days\'';
+  let where = 'WHERE user_id = $1';
   if (walletId) {
     params.push(walletId);
     where += ` AND wallet_id = $${params.length}`;
+  }
+  if (days != null) {
+    params.push(days);
+    where += ` AND exit_at >= NOW() - ($${params.length} || ' days')::interval`;
   }
 
   const { rows: entries } = await pool.query(
@@ -219,28 +260,85 @@ async function getWeeklyPatterns(userId, { walletId } = {}) {
     return { totalTrades: 0, losingTrades: 0, patterns: [] };
   }
 
+  const pnls = entries.map((e) => parseFloat(e.realised_pnl));
+  const losingTrades = pnls.filter((p) => p < 0).length;
+
   const byRule = {};
-  for (const row of entries) {
-    for (const ruleId of row.rule_ids || []) {
-      if (!byRule[ruleId]) byRule[ruleId] = { count: 0, totalPnl: 0 };
-      byRule[ruleId].count += 1;
-      byRule[ruleId].totalPnl += parseFloat(row.realised_pnl);
+  for (let i = 0; i < entries.length; i++) {
+    const ruleIds = entries[i].rule_ids || [];
+    for (const ruleId of ruleIds) {
+      if (!byRule[ruleId]) byRule[ruleId] = { matchPnls: [] };
+      byRule[ruleId].matchPnls.push(pnls[i]);
     }
   }
 
-  const patterns = Object.entries(byRule)
-    .map(([ruleId, stats]) => ({
-      ruleId,
-      count: stats.count,
-      avgPnl: Math.round((stats.totalPnl / stats.count) * 100) / 100,
-    }))
-    .sort((a, b) => a.avgPnl - b.avgPnl); // worst patterns first
+  let patterns = Object.entries(byRule).map(([ruleId, stats]) => {
+    const matchPnls = stats.matchPnls;
+    const matchCount = matchPnls.length;
+    const matchLossCount = matchPnls.filter((p) => p < 0).length;
+    const avgPnl = round2(sum(matchPnls) / matchCount);
 
-  return {
-    totalTrades: entries.length,
-    losingTrades: entries.filter((e) => parseFloat(e.realised_pnl) < 0).length,
-    patterns,
-  };
+    // Everything else = trades NOT matching this rule, for comparison.
+    const otherPnls = pnls.filter((p, i) => !(entries[i].rule_ids || []).includes(ruleId));
+    const otherAvgPnl = otherPnls.length ? round2(sum(otherPnls) / otherPnls.length) : null;
+
+    // Rough "this pattern cost you" figure: only meaningful when the
+    // pattern's trades did worse than everything else — never shown as
+    // a negative/confusing number when the pattern is neutral or good.
+    const estimatedCost =
+      otherAvgPnl != null && otherAvgPnl > avgPnl
+        ? round2((otherAvgPnl - avgPnl) * matchCount)
+        : null;
+
+    return {
+      ruleId,
+      label: RULE_LABELS[ruleId] || ruleId,
+      count: matchCount,
+      lossCount: matchLossCount,
+      avgPnl,
+      otherAvgPnl,
+      estimatedCost,
+    };
+  });
+
+  patterns.sort(
+    sortBy === 'count'
+      ? (a, b) => b.count - a.count // most frequent first
+      : (a, b) => a.avgPnl - b.avgPnl, // worst P&L first
+  );
+
+  if (limit) patterns = patterns.slice(0, limit);
+
+  return { totalTrades: entries.length, losingTrades, patterns };
+}
+
+/**
+ * Weekly pattern view — "N of your M losing trades this week were X".
+ * Always the last 7 days, worst pattern first — this is the narrative
+ * card, not a filter control.
+ */
+async function getWeeklyPatterns(userId, { walletId } = {}) {
+  return computePatternSummary(userId, { walletId, days: 7, sortBy: 'avgPnl' });
+}
+
+/**
+ * Top keywords — the 5 most frequently-firing rules over a selectable
+ * range, sorted by frequency (not P&L). Meant to back clickable filter
+ * chips: tapping one calls listJournalEntries(userId, { ruleId, ... }).
+ *
+ * @param {'week'|'month'|'all'} [opts.range='month']
+ */
+async function getTopKeywords(userId, { walletId, range = 'month', limit = 5 } = {}) {
+  const days = resolveRangeDays(range);
+  return computePatternSummary(userId, { walletId, days, sortBy: 'count', limit });
+}
+
+function sum(arr) {
+  return arr.reduce((a, b) => a + b, 0);
+}
+
+function round2(n) {
+  return Math.round(n * 100) / 100;
 }
 
 module.exports = {
@@ -249,4 +347,5 @@ module.exports = {
   listJournalEntries,
   getJournalEntry,
   getWeeklyPatterns,
+  getTopKeywords,
 };

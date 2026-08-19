@@ -11,9 +11,10 @@
 const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/auth');
-const { listJournal, getJournal, weeklyPatterns } = require('../controllers/journalController');
+const { listJournal, getJournal, weeklyPatterns, topKeywords } = require('../controllers/journalController');
 
 router.get('/patterns', protect, weeklyPatterns); // before /:id — must not be shadowed
+router.get('/keywords', protect, topKeywords);     // before /:id — must not be shadowed
 router.get('/', protect, listJournal);
 router.get('/:id', protect, getJournal);
 
