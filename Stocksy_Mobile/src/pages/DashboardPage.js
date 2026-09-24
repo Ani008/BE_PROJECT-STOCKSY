@@ -1,8 +1,20 @@
 import React from "react";
 import { StatusBar } from "expo-status-bar";
 import { useFocusEffect } from "@react-navigation/native";
-import {View, StyleSheet, ScrollView, TouchableOpacity, Text} from "react-native";
-import { Screen, Card, AppText, SectionHeader, SegmentedToggle } from "../components";
+import {
+  View,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Text,
+} from "react-native";
+import {
+  Screen,
+  Card,
+  AppText,
+  SectionHeader,
+  SegmentedToggle,
+} from "../components";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -211,13 +223,17 @@ const DashboardPage = ({ navigation }) => {
   const { prices, isConnected } = useMarketData(() => refreshRef.current());
   const {
     // Combined (kept for anything else on this screen that wants the whole book)
-    positions, totals,
+    positions,
+    totals,
     // Delivery (CNC) vs Intraday (MIS) — the Total Assets card needs these
     // split so closing intraday positions doesn't make it look like money
     // vanished from the (unrelated) delivery holdings.
-    holdingsPositions, holdingsTotals,
-    intradayPositions, intradayTotals,
-    loading, refresh,
+    holdingsPositions,
+    holdingsTotals,
+    intradayPositions,
+    intradayTotals,
+    loading,
+    refresh,
   } = usePortfolio(prices);
 
   useEffect(() => {
@@ -229,8 +245,10 @@ const DashboardPage = ({ navigation }) => {
   // since that's the "real" long-term holding value people expect to see
   // first; Intraday is same-day-only and can legitimately go to zero.
   const [assetTab, setAssetTab] = useState("delivery");
-  const activePositions = assetTab === "delivery" ? holdingsPositions : intradayPositions;
-  const activeTotals = assetTab === "delivery" ? holdingsTotals : intradayTotals;
+  const activePositions =
+    assetTab === "delivery" ? holdingsPositions : intradayPositions;
+  const activeTotals =
+    assetTab === "delivery" ? holdingsTotals : intradayTotals;
 
   // Tab screens stay mounted in the background — without this, Dashboard
   // keeps showing whatever it fetched once at app launch, even after a
@@ -238,7 +256,7 @@ const DashboardPage = ({ navigation }) => {
   useFocusEffect(
     React.useCallback(() => {
       refresh();
-    }, [refresh])
+    }, [refresh]),
   );
 
   useEffect(() => {
@@ -324,7 +342,12 @@ const DashboardPage = ({ navigation }) => {
       edges={["left", "right"]}
       statusBarStyle="light-content"
     >
-      <View style={[styles.heroSection, { paddingTop: insets.top + moderateScale(20) }]}>
+      <View
+        style={[
+          styles.heroSection,
+          { paddingTop: insets.top + moderateScale(20) },
+        ]}
+      >
         {/* ── Top Header ──────────────────────────────────────────────────── */}
         <View style={styles.headerRow}>
           <View>
@@ -332,7 +355,11 @@ const DashboardPage = ({ navigation }) => {
               {getGreeting()}
             </AppText>
 
-            <AppText variant="h2" color="white" style={{ marginTop: moderateScale(2) }}>
+            <AppText
+              variant="h2"
+              color="white"
+              style={{ marginTop: moderateScale(2) }}
+            >
               Hi, {user?.username || "Trader"}
             </AppText>
           </View>
@@ -365,12 +392,15 @@ const DashboardPage = ({ navigation }) => {
             onPress={() => navigation.navigate("Portfolio")}
           >
             <AppText variant="caption" color={Colors.textSecondary}>
-              {assetTab === "delivery" ? "Delivery Value" : "Intraday P&L (Today)"}
+              {assetTab === "delivery"
+                ? "Delivery Value"
+                : "Intraday P&L (Today)"}
             </AppText>
             <View style={styles.priceRow}>
               {assetTab === "delivery" ? (
                 <AppText variant="h1">
-                  ₹{activeTotals?.portfolioValue?.toLocaleString("en-IN") ?? "0"}
+                  ₹
+                  {activeTotals?.portfolioValue?.toLocaleString("en-IN") ?? "0"}
                 </AppText>
               ) : (
                 <AppText
@@ -450,28 +480,26 @@ const DashboardPage = ({ navigation }) => {
 
           <View style={styles.miniCardsRow}>
             {activePositions?.length > 0 ? (
-              activePositions
-                .slice(0, 2)
-                .map((position) => (
-                  <MiniHoldingCard
-                    key={`${position.wallet_id}:${position.instrument_key}:${position.product_type}`}
-                    ticker={position.symbol}
-                    name={`₹${position.ltp?.toLocaleString("en-IN")}`}
-                    change={`${position.unrealisedPct?.toFixed(2)}%`}
-                    isPositive={position.unrealisedPnl >= 0}
-                    logoUrl={`https://img.logo.dev/${
-                      COMPANY_DOMAINS[position.symbol]
-                    }?token=pk_Bym4BAakTJudMK4MGnfpnw`}
-                    onPress={() =>
-                      navigation.navigate("StockDetail", {
-                        instrumentKey: position.instrument_key,
-                        symbol: position.symbol,
-                        name: position.name,
-                        sector: position.sector,
-                      })
-                    }
-                  />
-                ))
+              activePositions.slice(0, 2).map((position) => (
+                <MiniHoldingCard
+                  key={`${position.wallet_id}:${position.instrument_key}:${position.product_type}`}
+                  ticker={position.symbol}
+                  name={`₹${position.ltp?.toLocaleString("en-IN")}`}
+                  change={`${position.unrealisedPct?.toFixed(2)}%`}
+                  isPositive={position.unrealisedPnl >= 0}
+                  logoUrl={`https://img.logo.dev/${
+                    COMPANY_DOMAINS[position.symbol]
+                  }?token=pk_Bym4BAakTJudMK4MGnfpnw`}
+                  onPress={() =>
+                    navigation.navigate("StockDetail", {
+                      instrumentKey: position.instrument_key,
+                      symbol: position.symbol,
+                      name: position.name,
+                      sector: position.sector,
+                    })
+                  }
+                />
+              ))
             ) : (
               <AppText
                 variant="caption"
@@ -525,23 +553,30 @@ const DashboardPage = ({ navigation }) => {
       </ScrollView>
 
       {/* ── Large Cap ─────────────────────────────────────────────────── */}
-      <SectionHeader title="Large Cap Stocks" />
+      <SectionHeader
+        title="Large Cap Stocks"
+        style={{ marginTop: moderateScale(24) }}
+      />
       {LARGE_CAP_KEYS.map(renderLiveStock)}
 
       {/* ── Mid Cap ───────────────────────────────────────────────────── */}
-      <SectionHeader title="Mid Cap Stocks" />
+      <SectionHeader
+        title="Mid Cap Stocks"
+        style={{ marginTop: moderateScale(24) }}
+      />
       {MID_CAP_KEYS.map(renderLiveStock)}
 
       {/* ── Small Cap ─────────────────────────────────────────────────── */}
-      <SectionHeader title="Small Cap Stocks" />
+      <SectionHeader
+        title="Small Cap Stocks"
+        style={{ marginTop: moderateScale(24) }}
+      />
       {SMALL_CAP_KEYS.map(renderLiveStock)}
     </Screen>
   );
 };
 
 const styles = StyleSheet.create({
-
-
   heroSection: {
     marginHorizontal: -moderateScale(20),
     marginTop: -moderateScale(20),
@@ -622,9 +657,18 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
 
-  miniCardsRow: { flexDirection: "row", gap: moderateScale(10), marginBottom: moderateScale(18), minHeight: 58, alignItems: "center" },
+  miniCardsRow: {
+    flexDirection: "row",
+    gap: moderateScale(10),
+    marginBottom: moderateScale(18),
+    minHeight: 58,
+    alignItems: "center",
+  },
   noHoldingsText: { paddingVertical: moderateScale(18) },
-  assetToggleRow: { marginTop: moderateScale(4), marginBottom: moderateScale(14) },
+  assetToggleRow: {
+    marginTop: moderateScale(4),
+    marginBottom: moderateScale(14),
+  },
 
   sectionHeader: {
     flexDirection: "row",
@@ -634,7 +678,11 @@ const styles = StyleSheet.create({
     marginTop: moderateScale(24),
   },
 
-  horizontalScroll: { gap: moderateScale(14), paddingRight: moderateScale(4), marginBottom: moderateScale(28) },
+  horizontalScroll: {
+    gap: moderateScale(14),
+    paddingRight: moderateScale(4),
+    marginBottom: moderateScale(28),
+  },
 });
 
 export default DashboardPage;

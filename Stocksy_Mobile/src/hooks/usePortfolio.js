@@ -25,10 +25,18 @@ export const SECTOR_COLORS = {
   Infra: "#0891B2",
   Telecom: "#EC4899",
   Index: "#94A3B8",
-  "Mining & Metals": "#FFFFFF",
-  Defense: "#10B981",
-  "Financial Services": "#F59E0B",
-  "Renewable Energy": "#10B981",
+  // Was "#FFFFFF" — literally invisible against the white card/bar
+  // background, which is why VDL (Vedanta, mapped below) showed no
+  // color at all. Bronze/copper reads well for a mining sector and
+  // doesn't collide with anything else in this palette.
+  "Mining & Metals": "#B45309",
+  // Was "#10B981" — identical to Pharma, so any portfolio holding both
+  // sectors would render as one indistinguishable green blob in the bar.
+  Defense: "#65A30D",
+  // Was "#F59E0B" — identical to Energy, same collision issue.
+  "Financial Services": "#4F46E5",
+  // Was "#10B981" — identical to Pharma *and* the old Defense value.
+  "Renewable Energy": "#0D9488",
   Other: "#A78BFA",
 
 };

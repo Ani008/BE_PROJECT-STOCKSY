@@ -104,7 +104,7 @@ COMPANY_PROFILES = {
         "industry": "IT Services"
     },
 
-    "LTM": {
+    "LTIM": {
         "description": "Larsen & Toubro Infotech (LTI) is a global technology consulting and digital solutions company, helping more than 400 clients succeed in a converging world. The company specializes in digital transformation, providing innovative solutions that leverage the power of technology to drive business growth and efficiency.",
         "ceo": "Mr. Debashis Chatterjee",
         "founded": 1996,
@@ -216,7 +216,7 @@ COMPANY_PROFILES = {
         "industry": "Automobile"
     },
 
-    "HUL": {
+    "HINDUNILVR": {
         "description": "Hindustan Unilever Limited (HUL) is India’s largest Fast-Moving Consumer Goods company, guided by the belief that 'What is good for India, is good for HUL'. The company is focused on unlocking a billion aspirations, not just for its consumers, but for every stakeholder across its entire value chain.",
         "ceo": "Mr. Rohit Jawa",
         "founded": 1993,
@@ -232,7 +232,7 @@ COMPANY_PROFILES = {
         "industry": "Fmcg"
     },
 
-    "NESTLE":{
+    "NESTLEIND":{
         "description": "Nestlé India Limited is a major player in the country's food business, manufacturing and marketing a wide array of products for consumers. Guided by its promise to enhance life's quality, the company is dedicated to unlocking the power of food for both today's consumers and for future generations.",
         "ceo": "Suresh Narayana",
         "founded": 1959,
@@ -248,7 +248,7 @@ COMPANY_PROFILES = {
         "industry": "Fmcg"
     },
     
-    "BRITANIA":{
+    "BRITANNIA":{
         "description": "Part of the Wadia Group, Britannia is one of India's oldest and most iconic food companies, specializing in biscuits, dairy, and bakery products. Headquartered in Bengaluru, the company holds roughly one-third of the Indian biscuit market with flagship brands like Good Day, Marie Gold, and Tiger.",
         "ceo": "Mr. Varun Berry",
         "founded": 1892,

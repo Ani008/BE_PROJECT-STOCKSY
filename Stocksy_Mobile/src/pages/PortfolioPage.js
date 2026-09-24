@@ -6,7 +6,7 @@
 // Every field — prices, P&L, allocation — updates in real-time.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
@@ -36,6 +36,18 @@ function fmt(n, decimals = 2) {
 function fmtPct(n) {
   if (n == null || isNaN(n)) return '—';
   return (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
+}
+
+// Compact currency for table cells — full ₹ figures with commas get tight
+// fast across 5 columns on a phone, so numbers ≥ ₹1,000 collapse to
+// K/L/Cr the way most Indian finance apps already do.
+function fmtCompact(n) {
+  if (n == null || isNaN(n)) return '—';
+  const abs = Math.abs(n);
+  if (abs >= 10000000) return '₹' + (n / 10000000).toFixed(2) + 'Cr';
+  if (abs >= 100000) return '₹' + (n / 100000).toFixed(2) + 'L';
+  if (abs >= 1000) return '₹' + (n / 1000).toFixed(1) + 'K';
+  return '₹' + n.toFixed(0);
 }
 
 function sign(n) {
@@ -213,6 +225,97 @@ function PnlBreakdownRow({ label, value, pct, dimmed }) {
   );
 }
 
+// ─── Reusable: PLTable — Top Gainers / Top Losers table ───────────────────────
+// No mainstream broker app (Zerodha/Groww/Upstox) surfaces this as its own
+// dedicated table — they bury it inside a sortable holdings list at best.
+// Showing it as its own focused card makes it something people actually
+// come back to check, not just data they have to go dig for.
+const PL_ROWS_COLLAPSED = 5;
+
+function PLTable({ title, icon, accentColor, positions, type, expanded, onToggleExpand, onPressRow }) {
+  if (positions.length === 0) return null;
+
+  const shown = expanded ? positions : positions.slice(0, PL_ROWS_COLLAPSED);
+  const hasMore = positions.length > PL_ROWS_COLLAPSED;
+  const isGain = type === 'gain';
+
+  return (
+    <View style={[styles.plCard, { borderTopColor: accentColor, borderTopWidth: moderateScale(3) }]}>
+      {/* Card header */}
+      <View style={styles.plHeader}>
+        <View style={styles.plHeaderLeft}>
+          <View style={[styles.plIconWrap, { backgroundColor: accentColor + '18' }]}>
+            <Ionicons name={icon} size={moderateScale(16)} color={accentColor} />
+          </View>
+          <Text style={styles.plTitle}>{title}</Text>
+        </View>
+        <View style={[styles.plCountPill, { backgroundColor: accentColor + '18' }]}>
+          <Text style={[styles.plCountText, { color: accentColor }]}>{positions.length}</Text>
+        </View>
+      </View>
+
+      {/* Column headers */}
+      <View style={styles.plColHeaderRow}>
+        <Text style={[styles.plColHeader, styles.plColStock]}>STOCK</Text>
+        <Text style={[styles.plColHeader, styles.plColNum]}>INVESTED</Text>
+        <Text style={[styles.plColHeader, styles.plColNum]}>CURRENT</Text>
+        <Text style={[styles.plColHeader, styles.plColNum]}>{isGain ? 'GAIN' : 'LOSS'}</Text>
+        <Text style={[styles.plColHeader, styles.plColPct]}>%</Text>
+      </View>
+
+      {/* Rows */}
+      {shown.map((pos) => (
+        <TouchableOpacity
+          key={`${pos.wallet_id}:${pos.instrument_key}:${pos.product_type}`}
+          style={styles.plRow}
+          activeOpacity={0.65}
+          onPress={() => onPressRow(pos)}
+        >
+          <View style={styles.plColStock}>
+            <Text style={styles.plStockSymbol} numberOfLines={1}>{pos.symbol}</Text>
+          </View>
+          <Text style={[styles.plCell, styles.plColNum]} numberOfLines={1}>
+            {fmtCompact(pos.invested)}
+          </Text>
+          <Text style={[styles.plCell, styles.plColNum]} numberOfLines={1}>
+            {fmtCompact(pos.currentValue)}
+          </Text>
+          <Text
+            style={[styles.plCell, styles.plColNum, styles.plCellStrong, { color: accentColor }]}
+            numberOfLines={1}
+          >
+            {isGain ? '+' : '-'}{fmtCompact(Math.abs(pos.unrealisedPnl))}
+          </Text>
+          <Text
+            style={[styles.plCell, styles.plColPct, styles.plCellStrong, { color: accentColor }]}
+            numberOfLines={1}
+          >
+            {isGain ? '+' : '-'}{Math.abs(pos.unrealisedPct).toFixed(1)}%
+          </Text>
+        </TouchableOpacity>
+      ))}
+
+      {/* Show all / show less */}
+      {hasMore && (
+        <TouchableOpacity
+          style={styles.plShowMoreBtn}
+          onPress={onToggleExpand}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Text style={[styles.plShowMoreText, { color: accentColor }]}>
+            {expanded ? 'Show less' : `Show all ${positions.length}`}
+          </Text>
+          <Ionicons
+            name={expanded ? 'chevron-up' : 'chevron-down'}
+            size={moderateScale(14)}
+            color={accentColor}
+          />
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function PortfolioPage({ navigation }) {
@@ -261,6 +364,35 @@ export default function PortfolioPage({ navigation }) {
     await refresh();
     setRefreshing(false);
   }, [refresh]);
+
+  // ── Top Gainers / Top Losers ─────────────────────────────────────────────
+  const gainers = useMemo(
+    () =>
+      positions
+        .filter((p) => p.unrealisedPnl > 0)
+        .sort((a, b) => b.unrealisedPnl - a.unrealisedPnl),
+    [positions],
+  );
+  const losers = useMemo(
+    () =>
+      positions
+        .filter((p) => p.unrealisedPnl < 0)
+        .sort((a, b) => a.unrealisedPnl - b.unrealisedPnl),
+    [positions],
+  );
+  const [gainersExpanded, setGainersExpanded] = useState(false);
+  const [losersExpanded, setLosersExpanded] = useState(false);
+
+  const goToStock = useCallback(
+    (pos) =>
+      navigation.navigate('StockDetail', {
+        instrumentKey: pos.instrument_key,
+        symbol: pos.symbol,
+        name: pos.name,
+        sector: pos.sector,
+      }),
+    [navigation],
+  );
 
   // ── Loading state ──────────────────────────────────────────────────────────
   if (loading) {
@@ -454,13 +586,31 @@ export default function PortfolioPage({ navigation }) {
           />
         </SectionCard>
 
-        {/* ── Best / Worst performer ── */}
-        {(bestPerformer || worstPerformer) && (
-          <View style={styles.performerRow}>
-            <PerformerCard label="Best" position={bestPerformer} labelColor={Colors.gain} />
-            <PerformerCard label="Worst" position={worstPerformer} labelColor={Colors.loss} />
-          </View>
-        )}
+        {/* ── Top Gainers / Top Losers ──
+             Gainers first, on purpose: it's the same reason a Google
+             Finance or NSE "market movers" widget always shows gainers
+             before losers — leading with the numbers that feel good
+             keeps people opening this screen instead of dreading it. ── */}
+        <PLTable
+          title="Top Gainers"
+          icon="trending-up"
+          accentColor={Colors.gain}
+          positions={gainers}
+          type="gain"
+          expanded={gainersExpanded}
+          onToggleExpand={() => setGainersExpanded((v) => !v)}
+          onPressRow={goToStock}
+        />
+        <PLTable
+          title="Top Losers"
+          icon="trending-down"
+          accentColor={Colors.loss}
+          positions={losers}
+          type="loss"
+          expanded={losersExpanded}
+          onToggleExpand={() => setLosersExpanded((v) => !v)}
+          onPressRow={goToStock}
+        />
 
         {/* ── Holdings ── */}
         <SectionCard
@@ -724,6 +874,89 @@ const styles = StyleSheet.create({
   performerLabel:  { fontSize: fontScale(Typography.tiny), fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   performerSymbol: { fontSize: fontScale(Typography.bodyLarge), fontWeight: '800', color: Colors.text, marginTop: moderateScale(2) },
   performerName:   { fontSize: fontScale(Typography.tiny), color: Colors.textSecondary, marginBottom: moderateScale(4) },
+
+  // Top Gainers / Top Losers table
+  plCard: {
+    backgroundColor: Colors.white,
+    borderRadius: moderateScale(16),
+    padding: moderateScale(14),
+    marginBottom: moderateScale(14),
+    borderWidth: 0.5,
+    borderColor: Colors.border,
+    ...Shadows.card,
+  },
+  plHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: moderateScale(10),
+  },
+  plHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: moderateScale(8),
+  },
+  plIconWrap: {
+    width: moderateScale(28),
+    height: moderateScale(28),
+    borderRadius: moderateScale(8),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  plTitle: { fontSize: fontScale(Typography.bodyLarge), fontWeight: '700', color: Colors.text },
+  plCountPill: {
+    paddingHorizontal: moderateScale(8),
+    paddingVertical: moderateScale(2),
+    borderRadius: moderateScale(10),
+  },
+  plCountText: { fontSize: fontScale(Typography.tiny), fontWeight: '700' },
+
+  plColHeaderRow: {
+    flexDirection: 'row',
+    paddingBottom: moderateScale(6),
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.divider,
+    marginBottom: moderateScale(2),
+  },
+  plColHeader: {
+    fontSize: fontScale(Typography.tiny) - 1,
+    fontWeight: '700',
+    color: Colors.textMuted,
+    letterSpacing: 0.3,
+  },
+  plColStock: { flex: 1.35 },
+  plColNum:   { flex: 1, textAlign: 'right' },
+  plColPct:   { flex: 0.8, textAlign: 'right' },
+
+  plRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: moderateScale(10),
+    borderBottomWidth: 0.5,
+    borderBottomColor: Colors.divider,
+  },
+  plCell: {
+    fontSize: fontScale(Typography.small),
+    color: Colors.text,
+  },
+  plCellStrong: { fontWeight: '700' },
+  plStockSymbol: {
+    fontSize: fontScale(Typography.small),
+    fontWeight: '700',
+    color: Colors.text,
+  },
+
+  plShowMoreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: moderateScale(4),
+    paddingTop: moderateScale(10),
+  },
+  plShowMoreText: {
+    fontSize: fontScale(Typography.caption),
+    fontWeight: '700',
+  },
 
   // Sector bar
   allocBarWrap: {

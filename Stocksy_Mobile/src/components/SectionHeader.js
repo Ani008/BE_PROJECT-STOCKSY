@@ -1,27 +1,20 @@
 import React from "react";
-import {
-  View,
-  Text,
-} from "react-native";
+import { View, Text } from "react-native";
 
-import {
-  Typography,
-  Colors,
-  Spacing,
-} from "../theme";
+import { Typography, Colors, Spacing } from "../theme";
 
-export default function SectionHeader({
-  title,
-  right,
-}) {
+export default function SectionHeader({ title, right, style }) {
   return (
     <View
-      style={{
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: Spacing.lg,
-      }}
+      style={[
+        {
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: Spacing.lg,
+        },
+        style,
+      ]}
     >
       <Text
         style={{

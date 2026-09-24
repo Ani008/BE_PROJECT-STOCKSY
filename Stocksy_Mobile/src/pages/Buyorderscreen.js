@@ -21,6 +21,7 @@ import {
 import CreateWalletModal from "../components/CreateWalletModal";
 import MarketClosedModal from "../components/MarketClosedModal";
 import ChargesBreakdownModal from "../components/ChargesBreakDownModel";
+import SlideToConfirmButton from "../components/SlideToConfirmButton";
 import { walletService } from "../../services/walletService";
 import { fetchWallets, createWallet } from "../../services/walletService";
 import { placeOrder } from "../../services/orderService";
@@ -279,6 +280,43 @@ export default function BuyOrderScreen({ navigation, route }) {
   const accentColor = orderType === "BUY" ? BUY_COLOR : SELL_COLOR;
   const BLUE_BORDER = Colors.primary;
   const BLUE_BG = Colors.primary;
+
+  // ─── Slide-to-confirm CTA state ─────────────────────────────────────────────
+  // Mirrors the original TouchableOpacity logic exactly:
+  //   - market closed / no wallet → CTA stays interactive as a plain TAP
+  //     (not a slide) purely to surface the info modal/toast — dragging
+  //     to confirm doesn't make sense when there's nothing to confirm yet.
+  //   - genuinely blocked (bad qty, can't afford) → fully inert, dimmed.
+  //   - otherwise → real slide-to-confirm gesture.
+  let ctaMode;
+  let ctaLabel;
+  let ctaIcon;
+
+  if (placingOrder) {
+    ctaMode = "slide"; // loading prop takes over the visual state
+    ctaIcon = orderType === "BUY" ? "trending-up" : "trending-down";
+  } else if (!marketStatus.isOpen) {
+    ctaMode = "tap";
+    ctaLabel = "Tap — Market Closed";
+    ctaIcon = "time-outline";
+  } else if (wallets.length === 0) {
+    ctaMode = "tap";
+    ctaLabel = "Tap — Add a Wallet First";
+    ctaIcon = "wallet-outline";
+  } else if (!canPlace) {
+    ctaMode = "disabled";
+    ctaLabel =
+      qtyNum <= 0
+        ? "Enter Quantity"
+        : !canAfford
+          ? "Insufficient Balance"
+          : "Unavailable";
+    ctaIcon = orderType === "BUY" ? "trending-up" : "trending-down";
+  } else {
+    ctaMode = "slide";
+    ctaLabel = orderType === "BUY" ? "Slide to Buy" : "Slide to Sell";
+    ctaIcon = orderType === "BUY" ? "trending-up" : "trending-down";
+  }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
@@ -699,48 +737,17 @@ export default function BuyOrderScreen({ navigation, route }) {
             },
           ]}
         >
-          <TouchableOpacity
-            style={[
-              styles.ctaBtn,
-              {
-                backgroundColor: !marketStatus.isOpen
-                  ? Colors.warning
-                  : canPlace
-                    ? accentColor
-                    : Colors.primary,
-              },
-            ]}
-            onPress={handlePlaceOrder}
-            disabled={marketStatus.isOpen && !canPlace && wallets.length > 0}
-            activeOpacity={0.85}
-          >
-            {placingOrder ? (
-              <ActivityIndicator color={Colors.white} />
-            ) : !marketStatus.isOpen ? (
-              <>
-                <Ionicons name="time-outline" size={18} color={Colors.white} />
-                <Text style={[styles.ctaBtnTxt, { color: Colors.white }]}>
-                  Market Closed
-                </Text>
-              </>
-            ) : (
-              <>
-                <Ionicons
-                  name={orderType === "BUY" ? "trending-up" : "trending-down"}
-                  size={18}
-                  color={canPlace ? Colors.white : Colors.text}
-                />
-                <Text
-                  style={[
-                    styles.ctaBtnTxt,
-                    { color: canPlace ? Colors.white : Colors.text },
-                  ]}
-                >
-                  {orderType === "BUY" ? "Place Buy Order" : "Place Sell Order"}
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
+          <SlideToConfirmButton
+            mode={ctaMode}
+            label={ctaLabel}
+            loadingLabel={
+              orderType === "BUY" ? "Placing Buy Order..." : "Placing Sell Order..."
+            }
+            color={ctaMode === "disabled" ? Colors.textMuted : accentColor}
+            icon={ctaIcon}
+            loading={placingOrder}
+            onConfirm={handlePlaceOrder}
+          />
         </View>
       </KeyboardAvoidingView>
 
