@@ -24,7 +24,7 @@ import DeleteAccountModal from "../components/DeleteAccountModal";
 import { Colors, Typography, fontScale, moderateScale } from "../theme";
 
 const APP_VERSION = "1.0.0";
-const SUPPORT_EMAIL = "indiastocksy@gmail.com";
+const SUPPORT_EMAIL = "support@stocksy.online";
 
 const getInitials = (name) => {
   if (!name) return "T";

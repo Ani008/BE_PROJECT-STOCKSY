@@ -12,7 +12,7 @@ const SPLASH_SOURCE = require("../../assets/Logo_Video.mp4");
 // given device/OS combo (rare, but this guarantees the splash can never
 // get stuck open). Your video is 4s, so this fires ~0.5s after it
 // should have already advanced naturally.
-const FALLBACK_TIMEOUT_MS = 4500;
+const FALLBACK_TIMEOUT_MS = 2500;
 
 const SplashVideoScreen = ({ onFinish }) => {
   const finishedRef = useRef(false);

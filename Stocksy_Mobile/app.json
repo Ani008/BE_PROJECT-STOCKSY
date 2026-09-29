@@ -26,7 +26,8 @@
       "expo-font",
       "expo-web-browser",
       "@react-native-google-signin/google-signin",
-      "expo-video"
+      "expo-video",
+      "expo-status-bar"
     ],
     "extra": {
       "eas": {
