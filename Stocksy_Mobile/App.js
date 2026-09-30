@@ -1,5 +1,11 @@
 import React, { useEffect, useState } from "react";
-import { View, ActivityIndicator, StyleSheet, Text, TextInput } from "react-native";
+import {
+  View,
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+  TextInput,
+} from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
@@ -19,7 +25,10 @@ Text.defaultProps.allowFontScaling = false;
 if (TextInput.defaultProps == null) TextInput.defaultProps = {};
 TextInput.defaultProps.allowFontScaling = false;
 
-import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  SafeAreaProvider,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { ToastProvider } from "./src/context/ToastProvider";
 import SessionExpiredScreen from "./src/components/SessionExpiredScreen";
 import SplashVideoScreen from "./src/components/SplashVideoScreen";
@@ -195,32 +204,42 @@ export default function App() {
     <SafeAreaProvider>
       <ToastProvider>
         <NavigationContainer>
-        <StatusBar style="auto" />
-        <Stack.Navigator
-          initialRouteName={isAuthenticated ? "MainTabs" : "Login"}
-          screenOptions={{ headerShown: false }}
-        >
-          {/* ── Auth screens (no tab bar) ──────────────────────────────────── */}
-          <Stack.Screen name="Login" component={LoginPage} />
-          <Stack.Screen name="Signup" component={SignupPage} />
-          <Stack.Screen
-            name="ForgotPassword"
-            component={ForgotPasswordScreen}
-          />
+          <StatusBar style="auto" />
+          <Stack.Navigator
+            initialRouteName={isAuthenticated ? "MainTabs" : "Login"}
+            screenOptions={{ headerShown: false }}
+          >
+            {/* ── Auth screens (no tab bar) ──────────────────────────────────── */}
+            <Stack.Screen name="Login" component={LoginPage} />
+            <Stack.Screen name="Signup" component={SignupPage} />
+            <Stack.Screen
+              name="ForgotPassword"
+              component={ForgotPasswordScreen}
+            />
 
-          {/* ── Authenticated shell (tab bar lives inside here) ────────────── */}
-          <Stack.Screen name="MainTabs" component={MainTabs} />
-          <Stack.Screen name="Wallet" component={WalletScreen} />
-          <Stack.Screen name="AllTransactions" component={AllTransactionsPage} />
-          <Stack.Screen name="OrderHistory" component={OrderHistoryPage} />
-          <Stack.Screen name="Journal" component={JournalScreen} />
-          <Stack.Screen name="Alerts" component={AlertsPage} />
+            {/* ── Authenticated shell (tab bar lives inside here) ────────────── */}
+            <Stack.Screen name="MainTabs" component={MainTabs} />
+            <Stack.Screen name="Wallet" component={WalletScreen} />
+            <Stack.Screen
+              name="AllTransactions"
+              component={AllTransactionsPage}
+            />
+            <Stack.Screen name="OrderHistory" component={OrderHistoryPage} />
+            <Stack.Screen name="Journal" component={JournalScreen} />
+            <Stack.Screen name="Alerts" component={AlertsPage} />
 
-          <Stack.Screen name="Search" component={SearchPage} />
-          <Stack.Screen name="StockDetail" component={StockDetailPage} />
-          <Stack.Screen name="BuyOrder" component={BuyOrderScreen} />
-          <Stack.Screen name="OrderSuccess" component={OrderSuccessScreen} />
-        </Stack.Navigator>
+            <Stack.Screen name="Search" component={SearchPage} />
+            <Stack.Screen name="StockDetail" component={StockDetailPage} />
+            <Stack.Screen
+              name="BuyOrder"
+              component={BuyOrderScreen}
+              options={{
+                gestureEnabled: false,
+                fullScreenGestureEnabled: false,
+              }}
+            />
+            <Stack.Screen name="OrderSuccess" component={OrderSuccessScreen} />
+          </Stack.Navigator>
         </NavigationContainer>
       </ToastProvider>
     </SafeAreaProvider>

@@ -99,7 +99,9 @@ const SlideToConfirmButton = ({
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => isInteractiveRef.current,
+      onStartShouldSetPanResponderCapture: () => isInteractiveRef.current,
       onMoveShouldSetPanResponder: () => isInteractiveRef.current,
+      onMoveShouldSetPanResponderCapture: () => isInteractiveRef.current,
       onPanResponderMove: (evt, gesture) => {
         if (!isInteractiveRef.current) return;
         const next = Math.min(Math.max(gesture.dx, 0), maxTranslateRef.current);
