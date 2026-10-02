@@ -161,3 +161,56 @@ All errors use the app's standard `{ message, code, severity }` shape.
 
 Full graphs (5 suppliers + 5 customers): `COALINDIA`, `NTPC`, `TATASTEEL`, `LT`, `ULTRACEMCO`.
 Other nodes reached by tapping (e.g. `BPCL`, `RELIANCE`) may have only one side filled, or return 404, so handle both.
+
+
+---
+
+# Supply Chain Change API (admin enters, applied immediately)
+
+When a company changes a supplier/customer, an **admin** submits one form. It is applied to the graph **immediately** (no pending, no approval) and the API returns the updated graph. Every change is also logged as history.
+
+**Setup:** run `015_supply_change_reports.sql`, then `016_admin_direct_supply_changes.sql`. Make an admin:
+```sql
+UPDATE users SET is_admin = TRUE WHERE email = 'your@email.com';
+```
+
+## `POST /api/supply-chain/changes` (admin only)
+
+`Authorization: Bearer <JWT>` of an admin user. Non-admin gets `403 FORBIDDEN`.
+
+| Field | Required | Notes |
+|---|---|---|
+| `companySymbol` | yes | company whose graph changes, e.g. `TATASTEEL` |
+| `relationSide` | yes | `SUPPLIER` or `CUSTOMER` |
+| `changeType` | yes | `REPLACED`, `ADDED`, `REMOVED` |
+| `oldParty` | REPLACED / REMOVED | must already exist; its link (same `item`) is deleted |
+| `newParty` | REPLACED / ADDED | created automatically if not in `companies` |
+| `newPartyType` | no | `listed` / `unlisted` (default) / `government` / `foreign` |
+| `newPartySymbol` | if `listed` | NSE symbol for a new listed company |
+| `item` | yes | e.g. `Iron ore` (must match the existing link's item when removing) |
+| `confidence` | no | `HIGH` (default) / `MEDIUM` / `LOW` |
+| `reason`, `sourceUrl`, `effectiveDate` | no | `effectiveDate` is `YYYY-MM-DD` |
+
+```json
+{
+  "companySymbol": "TATASTEEL",
+  "relationSide": "SUPPLIER",
+  "changeType": "REPLACED",
+  "oldParty": "NMDC Ltd",
+  "newParty": "BHP Group",
+  "newPartyType": "foreign",
+  "item": "Iron ore",
+  "reason": "Long-term import contract"
+}
+```
+
+**201 response:** `{ message, change: {...}, graph: { company, suppliers, customers } }`. `graph` is the same shape as `GET /api/supply-chain/:symbol`, already updated.
+
+The whole change is one transaction: if anything fails (e.g. the old link doesn't exist) nothing is saved.
+
+## `GET /api/supply-chain/changes/company/:symbol`
+
+Any logged-in user. Returns `{ changes: [...] }` (newest first): what changed, when, and why.
+
+## Errors
+`400 VALIDATION_ERROR`, `401 UNAUTHORIZED`, `403 FORBIDDEN` (not admin), `404 NOT_FOUND` (company/old link missing).

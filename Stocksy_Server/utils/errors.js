@@ -29,6 +29,9 @@ class NotFoundError extends Error {
 class UnauthorizedError extends Error {
   constructor(message) { super(message || 'Not authorized'); this.name = 'UnauthorizedError'; }
 }
+class ForbiddenError extends Error {
+  constructor(message) { super(message || 'Forbidden'); this.name = 'ForbiddenError'; }
+}
 class SessionExpiredError extends Error {
   constructor() { super('Your session has expired'); this.name = 'SessionExpiredError'; }
 }
@@ -72,6 +75,9 @@ function mapErrorToResponse(err) {
   if (err instanceof UnauthorizedError)
     return { status: 401, body: { message: err.message, code: 'UNAUTHORIZED', severity: 'error' } };
 
+  if (err instanceof ForbiddenError)
+    return { status: 403, body: { message: err.message, code: 'FORBIDDEN', severity: 'error' } };
+
   if (err instanceof SessionExpiredError)
     return { status: 401, body: { message: err.message, code: 'SESSION_EXPIRED', severity: 'error' } };
 
@@ -99,6 +105,7 @@ module.exports = {
   NotFoundError,
   UnauthorizedError,
   SessionExpiredError,
+  ForbiddenError,
   mapErrorToResponse,
   sendError,
 };
