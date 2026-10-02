@@ -1,0 +1,92 @@
+-- Demo seed for supply_links (NOT verified data - replace before launch).
+-- Idempotent: safe to run more than once.
+BEGIN;
+
+INSERT INTO companies (name, nse_symbol, company_type) VALUES
+  ('Coal India Ltd', 'COALINDIA', 'listed'),
+  ('NTPC Ltd', 'NTPC', 'listed'),
+  ('Tata Steel Ltd', 'TATASTEEL', 'listed'),
+  ('Larsen & Toubro Ltd', 'LT', 'listed'),
+  ('UltraTech Cement Ltd', 'ULTRACEMCO', 'listed'),
+  ('Adani Power Ltd', 'ADANIPOWER', 'listed'),
+  ('Maharashtra State Power Generation Co (Mahagenco)', NULL, 'government'),
+  ('BEML Ltd', 'BEML', 'listed'),
+  ('Solar Industries India Ltd', 'SOLARINDS', 'listed'),
+  ('Bharat Petroleum Corp Ltd', 'BPCL', 'listed'),
+  ('Komatsu India Pvt Ltd', NULL, 'unlisted'),
+  ('Sandvik Asia Pvt Ltd', NULL, 'unlisted'),
+  ('Bharat Heavy Electricals Ltd', 'BHEL', 'listed'),
+  ('Singareni Collieries Co Ltd', NULL, 'government'),
+  ('Indian Railways', NULL, 'government'),
+  ('Uttar Pradesh Power Corporation Ltd (UPPCL)', NULL, 'government'),
+  ('Maharashtra State Electricity Distribution Co (MSEDCL)', NULL, 'government'),
+  ('Bihar State Power Holding Co Ltd', NULL, 'government'),
+  ('Madhya Pradesh Power Management Co Ltd', NULL, 'government'),
+  ('NMDC Ltd', 'NMDC', 'listed'),
+  ('Tata Power Co Ltd', 'TATAPOWER', 'listed'),
+  ('BHP Group', NULL, 'foreign'),
+  ('Maruti Suzuki India Ltd', 'MARUTI', 'listed'),
+  ('Tata Motors Ltd', 'TATAMOTORS', 'listed'),
+  ('Hero MotoCorp Ltd', 'HEROMOTOCO', 'listed'),
+  ('JSW Steel Ltd', 'JSWSTEEL', 'listed'),
+  ('Steel Authority of India Ltd (SAIL)', 'SAIL', 'listed'),
+  ('Ambuja Cements Ltd', 'AMBUJACEM', 'listed'),
+  ('National Highways Authority of India (NHAI)', NULL, 'government'),
+  ('Reliance Industries Ltd', 'RELIANCE', 'listed'),
+  ('Ministry of Defence (Indian Army)', NULL, 'government'),
+  ('DLF Ltd', 'DLF', 'listed'),
+  ('Godrej Properties Ltd', 'GODREJPROP', 'listed'),
+  ('Macrotech Developers Ltd (Lodha)', 'LODHA', 'listed'),
+  ('Tata Projects Ltd', NULL, 'unlisted')
+ON CONFLICT (LOWER(name)) DO NOTHING;
+
+INSERT INTO supply_links (supplier_id, customer_id, item, source_url, confidence, is_published)
+SELECT s.id, c.id, v.item, v.source_url, v.confidence, TRUE FROM (VALUES
+  ('BEML Ltd', 'Coal India Ltd', 'Mining equipment (dump trucks, shovels)', 'https://equipmentindia.com/construction-machinery-news/top-equipment-news/webexclusive/BEML-bags-Coal-India-order-for-dump-trucks/117159', 'HIGH'),
+  ('Solar Industries India Ltd', 'Coal India Ltd', 'Industrial explosives for blasting', NULL, 'MEDIUM'),
+  ('Bharat Petroleum Corp Ltd', 'Coal India Ltd', 'Diesel for mining fleet', NULL, 'MEDIUM'),
+  ('Komatsu India Pvt Ltd', 'Coal India Ltd', 'Heavy mining machinery', NULL, 'MEDIUM'),
+  ('Sandvik Asia Pvt Ltd', 'Coal India Ltd', 'Drilling and rock excavation equipment', NULL, 'MEDIUM'),
+  ('Coal India Ltd', 'NTPC Ltd', 'Thermal coal', 'https://themachinemaker.com/news/ntpc-secures-3-million-tonnes-of-coal-from-private-sector-suppliers/', 'HIGH'),
+  ('Coal India Ltd', 'Tata Steel Ltd', 'Coking coal', 'https://psuwatch.com/newsupdates/cils-coking-coal-linkage-auctions-for-steel-sector-to-gain-traction', 'MEDIUM'),
+  ('Coal India Ltd', 'UltraTech Cement Ltd', 'Coal for cement kilns', NULL, 'MEDIUM'),
+  ('Coal India Ltd', 'Adani Power Ltd', 'Thermal coal', NULL, 'MEDIUM'),
+  ('Coal India Ltd', 'Maharashtra State Power Generation Co (Mahagenco)', 'Thermal coal', NULL, 'MEDIUM'),
+  ('Larsen & Toubro Ltd', 'NTPC Ltd', 'Power plant construction (EPC)', NULL, 'MEDIUM'),
+  ('Bharat Heavy Electricals Ltd', 'NTPC Ltd', 'Boilers, turbines, generators', 'https://electricalmirror.net/bhel-secures-%e2%82%b913500-crore-ntpc-order-for-telangana-stage-ii-supercritical-thermal-power-project/', 'HIGH'),
+  ('Singareni Collieries Co Ltd', 'NTPC Ltd', 'Thermal coal', NULL, 'MEDIUM'),
+  ('Indian Railways', 'NTPC Ltd', 'Rail freight for coal', NULL, 'MEDIUM'),
+  ('NTPC Ltd', 'Uttar Pradesh Power Corporation Ltd (UPPCL)', 'Electricity (PPA)', 'https://powerline.net.in/2025/06/09/ntpc-rel-signs-ppa-for-1000-mw-solar-project-with-uppcl/', 'MEDIUM'),
+  ('NTPC Ltd', 'Maharashtra State Electricity Distribution Co (MSEDCL)', 'Electricity (PPA)', 'https://nvvn.co.in/assets/files/Dec-20-CERC.pdf', 'LOW'),
+  ('NTPC Ltd', 'Bihar State Power Holding Co Ltd', 'Electricity (PPA)', NULL, 'MEDIUM'),
+  ('NTPC Ltd', 'Madhya Pradesh Power Management Co Ltd', 'Electricity (PPA)', NULL, 'MEDIUM'),
+  ('NTPC Ltd', 'UltraTech Cement Ltd', 'Fly ash for cement', NULL, 'MEDIUM'),
+  ('NMDC Ltd', 'Tata Steel Ltd', 'Iron ore', NULL, 'MEDIUM'),
+  ('Tata Power Co Ltd', 'Tata Steel Ltd', 'Electricity', NULL, 'MEDIUM'),
+  ('BHP Group', 'Tata Steel Ltd', 'Imported coking coal', NULL, 'MEDIUM'),
+  ('Indian Railways', 'Tata Steel Ltd', 'Rail freight for raw material and steel', NULL, 'MEDIUM'),
+  ('Tata Steel Ltd', 'Larsen & Toubro Ltd', 'Construction steel', NULL, 'MEDIUM'),
+  ('Tata Steel Ltd', 'UltraTech Cement Ltd', 'Blast furnace slag for cement', NULL, 'LOW'),
+  ('Tata Steel Ltd', 'Maruti Suzuki India Ltd', 'Automotive steel', 'https://www.just-auto.com/?p=15432', 'LOW'),
+  ('Tata Steel Ltd', 'Tata Motors Ltd', 'Automotive steel', 'https://www.tatasteel.com/products-solutions/india/segments/automotive/', 'LOW'),
+  ('Tata Steel Ltd', 'Hero MotoCorp Ltd', 'Steel for two-wheelers', NULL, 'LOW'),
+  ('UltraTech Cement Ltd', 'Larsen & Toubro Ltd', 'Cement', NULL, 'MEDIUM'),
+  ('JSW Steel Ltd', 'Larsen & Toubro Ltd', 'Steel', NULL, 'MEDIUM'),
+  ('Steel Authority of India Ltd (SAIL)', 'Larsen & Toubro Ltd', 'Steel', NULL, 'MEDIUM'),
+  ('Ambuja Cements Ltd', 'Larsen & Toubro Ltd', 'Cement', NULL, 'MEDIUM'),
+  ('Larsen & Toubro Ltd', 'Indian Railways', 'Rail and metro infrastructure projects', NULL, 'MEDIUM'),
+  ('Larsen & Toubro Ltd', 'National Highways Authority of India (NHAI)', 'Highway construction', NULL, 'MEDIUM'),
+  ('Larsen & Toubro Ltd', 'Reliance Industries Ltd', 'Refinery and petrochemical plant construction', NULL, 'MEDIUM'),
+  ('Larsen & Toubro Ltd', 'Ministry of Defence (Indian Army)', 'Defence equipment (artillery)', NULL, 'MEDIUM'),
+  ('Indian Railways', 'UltraTech Cement Ltd', 'Rail freight for cement and coal', NULL, 'MEDIUM'),
+  ('Reliance Industries Ltd', 'UltraTech Cement Ltd', 'Petcoke fuel', NULL, 'LOW'),
+  ('UltraTech Cement Ltd', 'DLF Ltd', 'Cement and ready-mix concrete', NULL, 'LOW'),
+  ('UltraTech Cement Ltd', 'Godrej Properties Ltd', 'Cement and ready-mix concrete', NULL, 'LOW'),
+  ('UltraTech Cement Ltd', 'Macrotech Developers Ltd (Lodha)', 'Cement and ready-mix concrete', NULL, 'LOW'),
+  ('UltraTech Cement Ltd', 'Tata Projects Ltd', 'Cement and ready-mix concrete', NULL, 'LOW')
+) AS v(supplier_name, customer_name, item, source_url, confidence)
+JOIN companies s ON LOWER(s.name) = LOWER(v.supplier_name)
+JOIN companies c ON LOWER(c.name) = LOWER(v.customer_name)
+ON CONFLICT (supplier_id, customer_id, item) DO NOTHING;
+
+COMMIT;

@@ -6,13 +6,31 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://api.stocksy.online/api",
+        "EXPO_PUBLIC_WS_URL": "wss://api.stocksy.online",
+        "EXPO_PUBLIC_API_TIMEOUT": "10000",
+        "EXPO_PUBLIC_WEB_CLIENT_ID": "623822738245-ki9jvgb1g121ecq6956qn9o79cs1kbkq.apps.googleusercontent.com"
+      }
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://api.stocksy.online/api",
+        "EXPO_PUBLIC_WS_URL": "wss://api.stocksy.online",
+        "EXPO_PUBLIC_API_TIMEOUT": "10000",
+        "EXPO_PUBLIC_WEB_CLIENT_ID": "623822738245-ki9jvgb1g121ecq6956qn9o79cs1kbkq.apps.googleusercontent.com"
+      }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://api.stocksy.online/api",
+        "EXPO_PUBLIC_WS_URL": "wss://api.stocksy.online",
+        "EXPO_PUBLIC_API_TIMEOUT": "10000",
+        "EXPO_PUBLIC_WEB_CLIENT_ID": "623822738245-ki9jvgb1g121ecq6956qn9o79cs1kbkq.apps.googleusercontent.com"
+      }
     }
   },
   "submit": {
