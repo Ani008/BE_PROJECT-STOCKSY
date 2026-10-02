@@ -11,6 +11,6 @@ const router = express.Router();
 const { protect } = require('../middleware/auth');
 const { getSupplyChain } = require('../controllers/supplyChainController');
 
-router.get('/:symbol', getSupplyChain);
+router.get('/:symbol', protect, getSupplyChain);
 
 module.exports = router;
