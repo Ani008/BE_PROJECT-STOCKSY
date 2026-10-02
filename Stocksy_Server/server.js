@@ -92,6 +92,7 @@ app.use("/api/revenue", require("./routes/revenue"));
 app.use("/api", require("./routes/orders"));
 app.use("/api/journal", require("./routes/journal"));
 app.use("/api/alerts", require("./routes/alerts"));
+app.use("/api/supply-chain", require("./routes/supplyChain"));
 
 // ─── Health check — hit this first from the app to confirm connectivity ───────
 // From the app: fetch('http://<YOUR_LAN_IP>:5000/health').then(r => r.text()).then(console.log)
