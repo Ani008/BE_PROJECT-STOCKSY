@@ -36,63 +36,66 @@ function toNode(row) {
   };
 }
 
+async function buildSupplyChain(symbol, dbClient = pool) {
+  if (!symbol || !/^[A-Z0-9&-]{1,30}$/.test(symbol)) {
+    throw new ValidationError('Invalid stock symbol');
+  }
+
+  // 1. the centre company
+  const centreRes = await dbClient.query(
+    `SELECT id, name, nse_symbol, company_type
+       FROM companies
+      WHERE nse_symbol = $1`,
+    [symbol]
+  );
+  const centre = centreRes.rows[0];
+  if (!centre) {
+    throw new NotFoundError('No supply chain data for this stock');
+  }
+
+  // 2. both sides in parallel
+  const [suppliersRes, customersRes] = await Promise.all([
+    // LEFT: who supplies to this company
+    dbClient.query(
+      `SELECT c.name, c.nse_symbol, c.company_type,
+              l.item, l.confidence, l.source_url
+         FROM supply_links l
+         JOIN companies c ON c.id = l.supplier_id
+        WHERE l.customer_id = $1 AND l.is_published = TRUE
+        ORDER BY ${CONFIDENCE_ORDER}, c.name`,
+      [centre.id]
+    ),
+    // RIGHT: who this company supplies to
+    dbClient.query(
+      `SELECT c.name, c.nse_symbol, c.company_type,
+              l.item, l.confidence, l.source_url
+         FROM supply_links l
+         JOIN companies c ON c.id = l.customer_id
+        WHERE l.supplier_id = $1 AND l.is_published = TRUE
+        ORDER BY ${CONFIDENCE_ORDER}, c.name`,
+      [centre.id]
+    ),
+  ]);
+
+  return {
+    company: {
+      name: centre.name,
+      symbol: centre.nse_symbol,
+      companyType: centre.company_type,
+    },
+    suppliers: suppliersRes.rows.map(toNode),   // LEFT
+    customers: customersRes.rows.map(toNode),   // RIGHT
+  };
+}
+
 async function getSupplyChain(req, res) {
   try {
     const symbol = String(req.params.symbol || '').trim().toUpperCase();
-
-    // symbols are like TATAMOTORS / M&M / BAJAJ-AUTO — reject anything odd
-    if (!symbol || !/^[A-Z0-9&-]{1,30}$/.test(symbol)) {
-      throw new ValidationError('Invalid stock symbol');
-    }
-
-    // 1. the centre company
-    const centreRes = await pool.query(
-      `SELECT id, name, nse_symbol, company_type
-         FROM companies
-        WHERE nse_symbol = $1`,
-      [symbol]
-    );
-    const centre = centreRes.rows[0];
-    if (!centre) {
-      throw new NotFoundError('No supply chain data for this stock');
-    }
-
-    // 2. both sides in parallel
-    const [suppliersRes, customersRes] = await Promise.all([
-      // LEFT: who supplies to this company
-      pool.query(
-        `SELECT c.name, c.nse_symbol, c.company_type,
-                l.item, l.confidence, l.source_url
-           FROM supply_links l
-           JOIN companies c ON c.id = l.supplier_id
-          WHERE l.customer_id = $1 AND l.is_published = TRUE
-          ORDER BY ${CONFIDENCE_ORDER}, c.name`,
-        [centre.id]
-      ),
-      // RIGHT: who this company supplies to
-      pool.query(
-        `SELECT c.name, c.nse_symbol, c.company_type,
-                l.item, l.confidence, l.source_url
-           FROM supply_links l
-           JOIN companies c ON c.id = l.customer_id
-          WHERE l.supplier_id = $1 AND l.is_published = TRUE
-          ORDER BY ${CONFIDENCE_ORDER}, c.name`,
-        [centre.id]
-      ),
-    ]);
-
-    return res.json({
-      company: {
-        name: centre.name,
-        symbol: centre.nse_symbol,
-        companyType: centre.company_type,
-      },
-      suppliers: suppliersRes.rows.map(toNode),   // LEFT
-      customers: customersRes.rows.map(toNode),   // RIGHT
-    });
+    const data = await buildSupplyChain(symbol, pool);
+    return res.json(data);
   } catch (err) {
     return sendError(res, err, logger);
   }
 }
 
-module.exports = { getSupplyChain };
+module.exports = { getSupplyChain, buildSupplyChain };
